@@ -77,6 +77,11 @@ jobs:
           components: rust-src
           targets: x86_64-unknown-none
 
+      - name: Add bare-metal target
+        run: |
+          TOOLCHAIN="$(rustup show active-toolchain | awk '{print $1}')"
+          rustup target add x86_64-unknown-none --toolchain "$TOOLCHAIN"
+
       - name: Build ISO
         run: make
         env:
