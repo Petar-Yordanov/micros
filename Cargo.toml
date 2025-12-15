@@ -1,0 +1,18 @@
+[package]
+name = "micros64"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+x86_64 = { version = "0.15", default-features = false, features = ["abi_x86_interrupt", "instructions"] }
+spin = "0.9"
+uart_16550 = "0.3"
+limine = "0.5"
+heapless = { version = "0.8", default-features = false }
+font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
