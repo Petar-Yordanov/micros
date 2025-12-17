@@ -1,0 +1,95 @@
+name: build-micros64
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build on ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            mode: ubuntu
+          - name: fedora
+            mode: fedora
+
+    container: ${{ matrix.mode == 'fedora' && 'fedora:41' || '' }}
+
+    steps:
+      - name: Install git (Fedora container)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y update
+          dnf -y install git ca-certificates curl
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install deps (Ubuntu)
+        if: matrix.mode == 'ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            xorriso \
+            qemu-utils \
+            mtools \
+            dosfstools \
+            make \
+            git \
+            curl \
+            ca-certificates \
+            gcc \
+            clang \
+            lld \
+            nasm
+
+      - name: Install deps (Fedora)
+        if: matrix.mode == 'fedora'
+        run: |
+          dnf -y update
+          dnf -y install \
+            xorriso \
+            qemu-img \
+            qemu-system-x86 \
+            mtools \
+            dosfstools \
+            make \
+            git \
+            curl \
+            ca-certificates \
+            gcc \
+            clang \
+            lld \
+            nasm
+
+      - name: Install Rust toolchain (nightly)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+          components: rust-src
+          targets: x86_64-unknown-none
+
+      - name: Add bare-metal target
+        run: |
+          TOOLCHAIN="$(rustup show active-toolchain | awk '{print $1}')"
+          rustup target add x86_64-unknown-none --toolchain "$TOOLCHAIN"
+
+      - name: Build ISO
+        run: make
+        env:
+          CARGO_BUILD_TARGET: x86_64-unknown-none
+
+      - name: Upload ISO artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: micros64-${{ matrix.name }}
+          path: |
+            micros64.iso
