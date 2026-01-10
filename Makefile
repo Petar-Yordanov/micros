@@ -8,7 +8,7 @@ DISK_ABS  := $(abspath $(DISK))
 all: $(ISO)
 
 $(KERNEL):
-	cargo build
+	cargo +nightly build -Z build-std=core,alloc
 
 $(ISO): $(KERNEL) limine.conf limine.cfg
 	xorriso -as mkisofs \
