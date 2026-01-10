@@ -1,3 +1,5 @@
+<a id="readme-top"></a>
+
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
@@ -38,11 +40,9 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![MicrOS][product-screenshot]](https://github.com/Petar-Yordanov/micros)
+MicrOS is a 64-bit Rust hobby kernel booted via Limine, featuring x86_64 descriptor setup (GDT/IDT/TSS), ISRs/IRQs with APIC timers (legacy PIC disabled) and RTC time, a full memory stack (frames, paging, VM arena, heap), serial-based debugging, PCI + virtio devices (blk and input), a VFS + FAT16 filesystem, and a preemptive scheduler with kernel threads and sleep. Userspace is still WIP (syscalls, ELF loader, shell, basic apps, device files, GUI).
 
-MicrOS64 is a 64-bit Rust hobby kernel booted via Limine, featuring x86_64 descriptor setup (GDT/IDT/TSS), ISRs/IRQs with APIC timers (legacy PIC disabled) and RTC time, a full memory stack (frames, paging, VM arena, heap), serial-based debugging, PCI + virtio devices (blk and input), a VFS + FAT16 filesystem, and a preemptive scheduler with kernel threads and sleep. Userspace is still WIP (syscalls, ELF loader, shell, basic apps, device files, GUI).
-
-[![CI](https://github.com/Petar-Yordanov/vmmon/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Petar-Yordanov/vmmon/actions/workflows/build.yml)
+[![CI](https://github.com/Petar-Yordanov/micros/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Petar-Yordanov/micros/actions/workflows/build.yml)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -119,7 +119,7 @@ MicrOS64 builds an ISO using Limine and runs under QEMU. It uses virtio-pci, vir
    make
    ```
 3. Create, format and populate the disk
-   ```js
+   ```sh
    make ensure-disk
    ```
 4. Change git remote url to avoid accidental pushes to base project
@@ -182,9 +182,9 @@ make run
   - [x] Kernel threads
   - [x] Sleep / timers integration
 
-- [ ] **Graphics**
-  - [ ] Framebuffer info / mapping
-  - [ ] Basic pixel drawing + text overlay (debug GUI)
+- [x] **Graphics**
+  - [x] Framebuffer info / mapping
+  - [x] Basic pixel drawing + text overlay (debug GUI)
 
 ---
 
