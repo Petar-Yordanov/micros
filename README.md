@@ -42,7 +42,11 @@
 
 MicrOS is a 64-bit Rust hobby kernel booted via Limine, featuring x86_64 descriptor setup (GDT/IDT/TSS), ISRs/IRQs with APIC timers (legacy PIC disabled) and RTC time, a full memory stack (frames, paging, VM arena, heap), serial-based debugging, PCI + virtio devices (blk and input), a VFS + FAT16 filesystem, and a preemptive scheduler with kernel threads and sleep. Userspace is still WIP (syscalls, ELF loader, shell, basic apps, device files, GUI).
 
+<div align="center">
+
 [![CI](https://github.com/Petar-Yordanov/micros/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/Petar-Yordanov/micros/actions/workflows/build.yml)
+
+</div>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
