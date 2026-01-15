@@ -39,8 +39,16 @@ pub mod sched {
 }
 
 pub mod fs {
-    pub mod fat16;
-    pub mod vfs;
+    pub mod fat32;
+    pub mod ext2;
+    pub mod vfs {
+        pub mod error;
+        pub mod mount;
+        pub mod ops;
+        pub mod path;
+        pub mod selftest;
+        pub use crate::kernel::fs::vfs::selftest::vfs_selftest;
+    }
 }
 
 pub mod drivers {

@@ -40,7 +40,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-MicrOS is a 64-bit Rust hobby kernel booted via Limine, featuring x86_64 descriptor setup (GDT/IDT/TSS), ISRs/IRQs with APIC timers (legacy PIC disabled) and RTC time, a full memory stack (frames, paging, VM arena, heap), serial-based debugging, PCI + virtio devices (blk and input), a VFS + FAT16 filesystem, and a preemptive scheduler with kernel threads and sleep. Userspace is still WIP (syscalls, ELF loader, shell, basic apps, device files, GUI).
+MicrOS is a 64-bit Rust hobby kernel booted via Limine, featuring x86_64 descriptor setup (GDT/IDT/TSS), ISRs/IRQs with APIC timers (legacy PIC disabled) and RTC time, a full memory stack (frames, paging, VM arena, heap), serial-based debugging, PCI + virtio devices (blk and input), a VFS + FAT32/ext2 filesystem, and a preemptive scheduler with kernel threads and sleep. Userspace is still WIP (syscalls, ELF loader, shell, basic apps, device files, GUI).
 
 <div align="center">
 
@@ -88,18 +88,26 @@ MicrOS64 builds an ISO using Limine and runs under QEMU. It uses virtio-pci, vir
 - Rust **nightly** + `rust-src`
 - Target: `x86_64-unknown-none`
 - Tooling: `make`, `clang`, `lld`, `nasm`
-- ISO + disk tooling: `xorriso`, `qemu-img`, `mtools`, `dosfstools`
+- ISO + disk tooling: `xorriso`, `qemu-img`, `mtools`, `dosfstools`, `e2fsprogs`
 - QEMU: `qemu-system-x86_64`
 
 * Essentials setup on Ubuntu/Debian
   ```sh
     sudo apt-get update
     sudo apt-get install -y \
-      xorriso \
-      qemu-utils qemu-system-x86 \
-      mtools dosfstools \
-      make git curl ca-certificates \
-      gcc clang lld nasm
+    xorriso \
+    qemu-utils \
+    mtools \
+    dosfstools \
+    e2fsprogs \
+    make \
+    git \
+    curl \
+    ca-certificates \
+    gcc \
+    clang \
+    lld \
+    nasm
   ```
 
 * Install Rust
@@ -124,7 +132,11 @@ MicrOS64 builds an ISO using Limine and runs under QEMU. It uses virtio-pci, vir
    ```
 3. Create, format and populate the disk
    ```sh
-   make ensure-disk
+    # FAT32
+    make create-disk FS=fat32
+
+    # ext2
+    make create-disk FS=ext2
    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -132,9 +144,13 @@ MicrOS64 builds an ISO using Limine and runs under QEMU. It uses virtio-pci, vir
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Run under QEMU (builds ISO + ensures disk exists):
+Run under QEMU:
 ```sh
-make run
+# FAT32
+make run FS=fat32
+
+# ext2
+make run FS=ext2
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -174,7 +190,8 @@ make run
 
 - [x] **Storage / Filesystems**
   - [x] VFS layer
-  - [x] FAT16 filesystem
+  - [x] FAT32 filesystem
+  - [x] Ext2 filesystem
 
 - [x] **Scheduling**
   - [x] Preemptive scheduler

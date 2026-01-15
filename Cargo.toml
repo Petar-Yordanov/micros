@@ -16,3 +16,11 @@ panic = "abort"
 
 [profile.release]
 panic = "abort"
+
+[profile.test]
+panic = "abort"
+
+[[bin]]
+name = "micros64"
+path = "src/main.rs"
+harness = false
