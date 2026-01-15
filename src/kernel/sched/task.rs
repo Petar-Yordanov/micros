@@ -162,7 +162,7 @@ pub fn spawn_kthread(
     let mut sp = kstack_top.as_u64();
     unsafe {
         sp -= 8;
-        *(sp as *mut u64) = kthread_exit as u64;
+        *(sp as *mut u64) = kthread_exit as *const () as u64;
         sp -= 8;
         *(sp as *mut u64) = arg as u64;
         sp -= 8;
@@ -177,7 +177,7 @@ pub fn spawn_kthread(
         ctx: Context {
             rsp: sp,
             rdi: arg as u64,
-            rip: kthread_trampoline as u64,
+            rip: kthread_trampoline as *const () as u64,
             ..Context::default()
         },
         wake_jiffies: 0,

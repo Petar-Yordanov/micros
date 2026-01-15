@@ -19,12 +19,9 @@ use crate::kernel::mm::virt::vmarena;
 use crate::kernel::sched::proc;
 use crate::kernel::syscall::types::FbInfo;
 use crate::platform::limine::hhdm::HHDM_REQ;
-use alloc::format;
 use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use core::fmt::Write;
-use core::panic::PanicInfo;
 use font8x8::UnicodeFonts;
-use x86_64::instructions::hlt;
 use x86_64::registers::model_specific::Msr;
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -46,110 +43,67 @@ fn assert_true(tag: &str, ok: bool) {
     }
 }
 
-pub fn fat16_selftest() {
-    use crate::kernel::fs::fat16::{Fat16, FatErr};
+pub fn fat32_selftest() {
+    use crate::kernel::fs::fat32::{Fat32, FatErr};
 
     macro_rules! bail {
         ($($t:tt)*) => {{ sprintln!($($t)*); return; }};
     }
 
-    match Fat16::mount(0) {
-        Err(e) => bail!("[fat16][FAIL] mount: {:?}", e),
+    match Fat32::mount(0) {
+        Err(e) => bail!("[fat32][FAIL] mount: {:?}", e),
         Ok(fs) => {
-            sprintln!("[fat16] mount OK");
+            sprintln!("[fat32] mount OK");
 
-            let _ = fs.mkdir_root("TESTDIR");
-            let payload = b"Hello from FAT16!\n";
-            if let Err(e) = fs.write_file_root("HELLO.TXT", payload) {
-                bail!("[fat16][FAIL] write root: {:?}", e);
+            if let Err(e) = fs.mkdir("/TestDir/Sub") {
+                bail!("[fat32][FAIL] mkdir nested: {:?}", e);
             }
-            let rd = match fs.read_file("/HELLO.TXT") {
+
+            let payload = b"Hello from Fat32 MixedCase!\n";
+            if let Err(e) = fs.write_file("/TestDir/Sub/Note.txt", payload, true) {
+                bail!("[fat32][FAIL] overwrite write: {:?}", e);
+            }
+
+            let rd = match fs.read_file("/TestDir/Sub/Note.txt") {
                 Ok(v) => v,
-                Err(e) => bail!("[fat16][FAIL] read root: {:?}", e),
+                Err(e) => bail!("[fat32][FAIL] read: {:?}", e),
             };
             if rd.as_slice() != payload {
-                bail!("[fat16][FAIL] content mismatch for /HELLO.TXT");
+                bail!("[fat32][FAIL] content mismatch after overwrite");
             }
 
-            if let Err(e) = fs.mkdir("/TESTDIR/SUB") {
-                bail!("[fat16][FAIL] mkdir nested: {:?}", e);
+            let ap = b"APPEND\n";
+            if let Err(e) = fs.write_file("/TestDir/Sub/Note.txt", ap, false) {
+                bail!("[fat32][FAIL] append write: {:?}", e);
             }
-            let nested_data = b"subdir says hi";
-            if let Err(e) = fs.write_file("/TESTDIR/SUB/NOTE.TXT", nested_data) {
-                bail!("[fat16][FAIL] write nested: {:?}", e);
-            }
-            let rd2 = match fs.read_file("/TESTDIR/SUB/NOTE.TXT") {
+
+            let rd2 = match fs.read_file("/TestDir/Sub/Note.txt") {
                 Ok(v) => v,
-                Err(e) => bail!("[fat16][FAIL] read nested: {:?}", e),
+                Err(e) => bail!("[fat32][FAIL] reread after append: {:?}", e),
             };
-            if rd2.as_slice() != nested_data {
-                bail!("[fat16][FAIL] content mismatch for /TESTDIR/SUB/NOTE.TXT");
+
+            let expected = [payload.as_slice(), ap.as_slice()].concat();
+            if rd2.as_slice() != expected.as_slice() {
+                bail!("[fat32][FAIL] content mismatch after append");
             }
 
-            let big = [b'X'; 4096];
-            if let Err(e) = fs.write_file("/TESTDIR/SUB/NOTE.TXT", &big) {
-                bail!("[fat16][FAIL] overwrite nested: {:?}", e);
-            }
-            let rd3 = match fs.read_file("/TESTDIR/SUB/NOTE.TXT") {
-                Ok(v) => v,
-                Err(e) => bail!("[fat16][FAIL] reread nested after overwrite: {:?}", e),
-            };
-            if rd3.len() != big.len() || rd3.iter().any(|&b| b != b'X') {
-                bail!("[fat16][FAIL] overwrite verification failed for /TESTDIR/SUB/NOTE.TXT");
+            match fs.read_file("/testdir/sub/note.txt") {
+                Err(FatErr::NotFound) => sprintln!("[fat32] case-sensitive lookup OK"),
+                Ok(_) => bail!("[fat32][FAIL] case-sensitive lookup unexpectedly succeeded"),
+                Err(e) => bail!("[fat32][FAIL] case-sensitive lookup wrong error: {:?}", e),
             }
 
-            match fs.read_file("/TESTDIR/SUB/NOPE.BIN") {
-                Err(FatErr::NotFound) => { /* expected */ }
-                Ok(_) => bail!("[fat16][FAIL] expected NotFound for /TESTDIR/SUB/NOPE.BIN"),
-                Err(e) => bail!("[fat16][FAIL] wrong error for NOPE.BIN: {:?}", e),
-            }
-
-            match fs.list_root() {
+            match fs.list_dir("/TestDir/Sub") {
                 Ok(list) => {
-                    sprintln!("[fat16] root listing:");
+                    sprintln!("[fat32] /TestDir/Sub listing:");
                     for n in list {
                         sprintln!(" - {}", n);
                     }
                 }
-                Err(e) => bail!("[fat16][FAIL] list root: {:?}", e),
-            }
-            match fs.list_dir("/TESTDIR") {
-                Ok(list) => {
-                    sprintln!("[fat16] /TESTDIR listing:");
-                    for n in list {
-                        sprintln!(" - {}", n);
-                    }
-                }
-                Err(e) => bail!("[fat16][FAIL] list /TESTDIR: {:?}", e),
-            }
-            match fs.list_dir("/TESTDIR/SUB") {
-                Ok(list) => {
-                    sprintln!("[fat16] /TESTDIR/SUB listing:");
-                    for n in list {
-                        sprintln!(" - {}", n);
-                    }
-                }
-                Err(e) => bail!("[fat16][FAIL] list /TESTDIR/SUB: {:?}", e),
+                Err(e) => bail!("[fat32][FAIL] list /TestDir/Sub: {:?}", e),
             }
 
-            for i in 0..10u8 {
-                let name = format!("F{:07}.TXT", i);
-                let data = [i; 128];
-                let path = format!("/TESTDIR/SUB/{}", name);
-                if let Err(e) = fs.write_file(&path, &data) {
-                    bail!("[fat16][FAIL] bulk write {}: {:?}", name, e);
-                }
-            }
-
-            let chk = match fs.read_file("/TESTDIR/SUB/F0000005.TXT") {
-                Ok(v) => v,
-                Err(e) => bail!("[fat16][FAIL] read churned file: {:?}", e),
-            };
-            if chk.len() != 128 || chk.iter().any(|&b| b != 5) {
-                bail!("[fat16][FAIL] churned file content wrong");
-            }
-
-            sprintln!("[fat16] basic + nested R/W PASS");
+            sprintln!("[fat32] PASS");
         }
     }
 }
@@ -469,11 +423,7 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
 
     let hhdm = HHDM_REQ.get_response().unwrap().offset();
 
-    let fb_va = if fb.addr >= hhdm {
-        fb.addr
-    } else {
-        hhdm + fb.addr
-    };
+    let fb_va = if fb.addr >= hhdm { fb.addr } else { hhdm + fb.addr };
 
     sprintln!(
         "[gui_test] fb: phys?={:#x} hhdm={:#x} va={:#x} {}x{} pitch={} bpp={}",
@@ -505,12 +455,7 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
     const OVERLAY_LINE_H: usize = 10;
     const OVERLAY_MAX_CHARS: usize = 44;
     let overlay_box_w = (OVERLAY_MAX_CHARS * 8) + (OVERLAY_MARGIN * 2);
-    let overlay_box_h = (OVERLAY_LINE_H * 2) + (OVERLAY_MARGIN * 2);
-
-    #[inline(always)]
-    fn put_px(fb: *mut u32, pitch: usize, x: usize, y: usize, color: u32) {
-        unsafe { core::ptr::write_volatile(fb.add(y * pitch + x), color) }
-    }
+    let overlay_box_h = (OVERLAY_LINE_H * 3) + (OVERLAY_MARGIN * 2);
 
     #[inline(always)]
     fn fill_rect(
@@ -622,12 +567,18 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
     let mut prev_cy = cy;
 
     let mut last_key: alloc::string::String = alloc::string::String::from("<none>");
+    let mut last_click: alloc::string::String = alloc::string::String::from("<none>");
+
+    let mut line1: alloc::string::String = alloc::string::String::with_capacity(64);
+    let mut line2: alloc::string::String = alloc::string::String::with_capacity(64);
+    let mut line3: alloc::string::String = alloc::string::String::with_capacity(64);
+
+    const LOG_INPUT: bool = false;
+
     let mut overlay_dirty = true;
 
     loop {
         while let Some(ev) = crate::kernel::input::events::next() {
-            //sprintln!("[gui] {:?}", ev);
-
             match ev {
                 InputEvent::MouseMove { dx, dy } => {
                     cx += dx;
@@ -649,24 +600,37 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
                     overlay_dirty = true;
                 }
                 InputEvent::MouseButton { button, pressed } => {
-                    sprintln!(
-                        "[gui] mouse button={:?} {}",
-                        button,
-                        if pressed { "down" } else { "up" }
-                    );
-                }
-                InputEvent::MouseWheel { delta } => {
-                    sprintln!("[gui] wheel {}", delta);
-                }
-                InputEvent::Key { key, pressed } => {
-                    sprintln!(
-                        "[gui] key code={:?} {}",
-                        key,
-                        if pressed { "down" } else { "up" }
-                    );
+                    if LOG_INPUT {
+                        sprintln!(
+                            "[gui] mouse button={:?} {}",
+                            button,
+                            if pressed { "down" } else { "up" }
+                        );
+                    }
 
                     if pressed {
-                        last_key = alloc::format!("{:?}", key);
+                        last_click.clear();
+                        let _ = write!(&mut last_click, "{:?}", button);
+                        overlay_dirty = true;
+                    }
+                }
+                InputEvent::MouseWheel { delta } => {
+                    if LOG_INPUT {
+                        sprintln!("[gui] wheel {}", delta);
+                    }
+                }
+                InputEvent::Key { key, pressed } => {
+                    if LOG_INPUT {
+                        sprintln!(
+                            "[gui] key code={:?} {}",
+                            key,
+                            if pressed { "down" } else { "up" }
+                        );
+                    }
+
+                    if pressed {
+                        last_key.clear();
+                        let _ = write!(&mut last_key, "{:?}", key);
                         overlay_dirty = true;
                     }
                 }
@@ -677,7 +641,6 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
             let box_x = w.saturating_sub(overlay_box_w);
             let box_y = 0;
 
-            // background box
             fill_rect(
                 fb_ptr,
                 pitch_pixels,
@@ -690,14 +653,14 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
                 h,
             );
 
-            let mut line1: alloc::string::String = alloc::string::String::with_capacity(64);
-            let mut line2: alloc::string::String = alloc::string::String::with_capacity(64);
-
             line1.clear();
             let _ = write!(&mut line1, "Mouse coordinates: {},{}", cx, cy);
 
             line2.clear();
             let _ = write!(&mut line2, "You pressed: {}", last_key);
+
+            line3.clear();
+            let _ = write!(&mut line3, "You clicked: {}", last_click);
 
             let text_right = w.saturating_sub(OVERLAY_MARGIN);
 
@@ -723,11 +686,21 @@ extern "C" fn gui_test(_: *mut u8) -> ! {
                 COLOR_CURSOR,
                 COLOR_BG,
             );
+            draw_text_right(
+                fb_ptr,
+                pitch_pixels,
+                w,
+                h,
+                text_right,
+                OVERLAY_Y0 + (OVERLAY_LINE_H * 2),
+                &line3,
+                COLOR_CURSOR,
+                COLOR_BG,
+            );
 
             overlay_dirty = false;
         }
 
-        // cursor redraw only when moved
         if cx != prev_cx || cy != prev_cy {
             unsafe {
                 let ocx = prev_cx as usize;
@@ -836,12 +809,13 @@ pub extern "C" fn _start() -> ! {
         crate::kernel::mm::heap::global_alloc::init(pages).expect("heap init");
         sprintln!("[MEMORY] Heap Initialized!");
 
-        // Tests (This needs to be moved away from _start)
+        // Tests
         test_frames();
         test_paging();
         test_vmarena();
         test_heap();
         sprintln!("[TEST] ALL OK");
+
         crate::kernel::drivers::virtio::pci::init();
 
         let mut buf = [0u8; 512];
@@ -919,9 +893,9 @@ pub extern "C" fn _start() -> ! {
 }
 
 #[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    sprintln!("[PANIC] {info}");
+fn panic(info: &core::panic::PanicInfo) -> ! {
+    crate::sprintln!("[PANIC] {info}");
     loop {
-        hlt();
+        x86_64::instructions::hlt();
     }
 }
