@@ -51,12 +51,14 @@ jobs:
           make
           mv -f micros64.iso micros64-fat32.iso
           make create-disk FS=fat32 DISK=disk-fat32.img
+          make setup-disk  FS=fat32 DISK=disk-fat32.img
 
       - name: Build ISO (ext2)
         run: |
           make
           mv -f micros64.iso micros64-ext2.iso
           make create-disk FS=ext2 DISK=disk-ext2.img
+          make setup-disk  FS=ext2 DISK=disk-ext2.img
 
       - name: Upload ISO FAT32 artifact
         uses: actions/upload-artifact@v4
