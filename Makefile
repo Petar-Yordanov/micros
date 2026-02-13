@@ -6,22 +6,16 @@ DISK      := disk.img
 DISK_SIZE := 1G
 
 # FS is mandatory for disk actions:
-#   make disk-create FS=fat32
-#   make disk-create FS=ext2
+#   make create-disk FS=fat32
+#   make create-disk FS=ext2
 FS ?=
 
 ISO       := micros64.iso
 KERNEL    := target/x86_64-unknown-none/debug/micros64
 DISK_ABS  := $(abspath $(DISK))
 
-# ----------------------------
-# Targets / toolchain
-# ----------------------------
 TARGET_JSON := $(abspath x86_64-unknown-none.json)
 
-# ----------------------------
-# Userland build outputs
-# ----------------------------
 USER_WM_DIR     := src/user/wm
 USER_TARGET_DIR := $(abspath src/user/target)
 USER_INIT_BIN   := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
@@ -30,9 +24,6 @@ USER_INIT_BIN   := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
 all: iso
 iso: $(ISO)
 
-# ----------------------------
-# Kernel
-# ----------------------------
 .PHONY: build-kernel
 build-kernel: $(KERNEL)
 
@@ -40,9 +31,6 @@ $(KERNEL):
 	@echo "[mk] building kernel -> $(KERNEL)"
 	cargo +nightly build -Z build-std=core,alloc
 
-# ----------------------------
-# Userland wm (no_std) for custom JSON target spec
-# ----------------------------
 .PHONY: build-user
 build-user: $(USER_INIT_BIN)
 
@@ -57,9 +45,6 @@ $(USER_INIT_BIN):
 	    --target-dir $(USER_TARGET_DIR)
 	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] expected init bin missing: $(USER_INIT_BIN)"; exit 1)
 
-# ----------------------------
-# ISO
-# ----------------------------
 $(ISO): $(KERNEL) limine.conf limine.cfg
 	@echo "[mk] building ISO -> $(ISO)"
 	xorriso -as mkisofs \
@@ -79,9 +64,6 @@ $(ISO): $(KERNEL) limine.conf limine.cfg
 	  /limine-uefi-cd.bin=$(LIMINE_DIR)/limine-uefi-cd.bin
 	$(LIMINE_DIR)/limine bios-install $(ISO)
 
-# ----------------------------
-# Validation helpers
-# ----------------------------
 .PHONY: check-vars check-fs
 check-vars:
 	@set -e; \
@@ -101,15 +83,9 @@ check-fs:
 	    exit 1; \
 	  fi
 
-# ----------------------------
-# Disk file (IMPORTANT: never auto-recreate if it already exists)
-# ----------------------------
 $(DISK):
 	@test -f "$(DISK)" || qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null
 
-# ----------------------------
-# Disk format/populate helpers
-# ----------------------------
 .PHONY: format-disk populate-disk
 
 format-disk: check-vars check-fs $(DISK)
@@ -153,32 +129,26 @@ populate-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
 	    echo "[mk] populate done"; \
 	  fi
 
-# ----------------------------
-# Disk lifecycle split
-# ----------------------------
-.PHONY: disk-create disk-setup disk-recreate
+.PHONY: create-disk setup-disk recreate-disk
 
-disk-create: check-vars check-fs
+create-disk: check-vars check-fs
 	@set -e; \
 	  echo "[mk] creating fresh disk ($(DISK_SIZE)) FS=$(FS)"; \
 	  rm -f $(DISK); \
 	  qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null; \
-	  echo "[mk] disk-create done"
+	  echo "[mk] create-disk done"
 
-disk-setup: check-vars check-fs $(DISK) $(USER_INIT_BIN)
+setup-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
 	@set -e; \
 	  echo "[mk] setting up disk FS=$(FS)"; \
 	  $(MAKE) format-disk FS=$(FS); \
 	  $(MAKE) populate-disk FS=$(FS); \
-	  echo "[mk] disk-setup done (FS=$(FS))"
+	  echo "[mk] setup-disk done (FS=$(FS))"
 
-disk-recreate: check-vars check-fs
-	@$(MAKE) disk-create FS=$(FS)
-	@$(MAKE) disk-setup  FS=$(FS)
+recreate-disk: check-vars check-fs
+	@$(MAKE) create-disk FS=$(FS)
+	@$(MAKE) setup-disk  FS=$(FS)
 
-# ----------------------------
-# Infer FS (MUST print only fat32/ext2/empty; no prerequisites that spam stdout)
-# ----------------------------
 .PHONY: infer-fs
 infer-fs: check-vars
 	@set -e; \
@@ -189,9 +159,6 @@ infer-fs: check-vars
 	  if [ "$$magic" = "53ef" ]; then echo "ext2"; exit 0; fi; \
 	  echo ""; exit 0
 
-# ----------------------------
-# Run (strict: does NOT modify the disk)
-# ----------------------------
 .PHONY: run run-just
 run: run-just
 
@@ -201,8 +168,8 @@ run-just: $(ISO) check-vars
 	  if [ -z "$$fs" ]; then \
 	    echo "[mk][ERR] $(DISK) is missing or unformatted."; \
 	    echo "           Do:"; \
-	    echo "             make disk-create FS=fat32|ext2"; \
-	    echo "             make disk-setup  FS=fat32|ext2"; \
+	    echo "             make create-disk FS=fat32|ext2"; \
+	    echo "             make setup-disk  FS=fat32|ext2"; \
 	    exit 1; \
 	  fi; \
 	  echo "[mk] inferred FS=$$fs for $(DISK)"; \
@@ -220,9 +187,6 @@ run-just: $(ISO) check-vars
 		-device virtio-mouse-pci,disable-legacy=on \
 		-no-reboot -no-shutdown
 
-# ----------------------------
-# Cleaning
-# ----------------------------
 .PHONY: clean clean-kernel clean-user clean-iso clean-disk clean-qemu-log
 clean: clean-kernel clean-user clean-iso clean-disk clean-qemu-log
 
