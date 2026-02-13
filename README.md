@@ -138,6 +138,14 @@ MicrOS64 builds an ISO using Limine and runs under QEMU. It uses virtio-pci, vir
     # ext2
     make create-disk FS=ext2
    ```
+4. Populate disk
+  ```
+  # FAT32
+  make disk-setup FS=fat32
+
+  # ext2
+  make disk-setup  FS=ext2
+  ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
