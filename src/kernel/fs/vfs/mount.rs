@@ -189,3 +189,18 @@ pub(crate) fn resolve<'a>(
     }
     Err(VfsError::NotMounted)
 }
+
+pub fn mount_root_auto() -> Result<(), VfsError> {
+    match mount_fat32("/", 0) {
+        Ok(()) => {
+            sprintln!("[vfs] mounted / (FAT32)");
+            Ok(())
+        }
+        Err(e_fat) => {
+            sprintln!("[vfs] FAT32 mount failed: {:?} (trying ext2)", e_fat);
+            mount_ext2("/", 0)?;
+            sprintln!("[vfs] mounted / (ext2)");
+            Ok(())
+        }
+    }
+}

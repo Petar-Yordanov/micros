@@ -51,15 +51,5 @@ pub extern "x86-interrupt" fn timer_irq(_stack: InterruptStackFrame) {
     use crate::kernel::sched::task;
 
     task::on_tick();
-
-    if task::preempt_needed() {
-        unsafe {
-            apic::eoi();
-        }
-        task::schedule();
-    } else {
-        unsafe {
-            apic::eoi();
-        }
-    }
+    unsafe { apic::eoi(); }
 }

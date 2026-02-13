@@ -5,9 +5,11 @@ use crate::arch::x86_64::interrupts::isr::{
     align, bound, breakpoint, cp_prot, debug, dev_na, df_handler, divide, gp, invalid_opcode,
     invalid_tss, mchk, nmi, overflow, pf_handler, sec, seg_np, simd, ss_fault, virt, x87,
 };
-use x86_64::structures::idt::InterruptDescriptorTable;
+use crate::arch::x86_64::interrupts::syscall_entry::syscall_entry;
 
 use spin::Once;
+use x86_64::structures::idt::InterruptDescriptorTable;
+use x86_64::{PrivilegeLevel, VirtAddr};
 
 static IDT: Once<InterruptDescriptorTable> = Once::new();
 
@@ -49,6 +51,12 @@ pub unsafe fn init(df_ist_index: u16) {
         idt[Irq::VirtioGpu as u8].set_handler_fn(virtio_gpu_irq);
         idt[Irq::Spurious as u8].set_handler_fn(spurious_irq);
         idt[Irq::Timer as u8].set_handler_fn(timer_irq);
+
+        unsafe {
+            idt[0x80]
+                .set_handler_addr(VirtAddr::new(syscall_entry as u64))
+                .set_privilege_level(PrivilegeLevel::Ring3);
+        }
 
         idt
     });

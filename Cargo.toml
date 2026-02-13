@@ -11,6 +11,8 @@ limine = "0.5"
 heapless = { version = "0.8", default-features = false }
 font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
 
+micros-abi = { path = "crates/abi" }
+
 [profile.dev]
 panic = "abort"
 
@@ -24,3 +26,12 @@ panic = "abort"
 name = "micros64"
 path = "src/main.rs"
 harness = false
+
+[workspace]
+members = [
+  ".",
+  "crates/abi",
+]
+exclude = [
+  "src/user",
+]

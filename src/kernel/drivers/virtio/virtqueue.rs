@@ -1,9 +1,9 @@
 extern crate alloc;
 
 use core::mem::size_of;
-use core::ptr::{read_volatile, write_volatile};
+use core::ptr::{read_volatile, write_bytes, write_volatile};
 use core::sync::atomic::{fence, Ordering::SeqCst};
-
+ use crate::frame;
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel::mm::map::mapper as page;
@@ -44,7 +44,7 @@ pub struct VirtqUsed {
 pub struct QueueMem {
     pub va: VirtAddr,
     pub pa: PhysAddr,
-    pub _size: usize,
+    pub size: usize,
 }
 
 impl QueueMem {
@@ -54,7 +54,52 @@ impl QueueMem {
         Self {
             va: va_base,
             pa: first_pa,
-            _size: n_pages * 4096,
+            size: n_pages * 4096,
+        }
+    }
+
+    pub fn alloc_pages_contig(n_pages: usize) -> Self {
+        assert!(n_pages >= 1);
+
+        let va_base = vmarena::alloc_n(n_pages).expect("vq vmarena");
+
+        for i in 0..n_pages {
+            let va = va_base + (i as u64) * 4096;
+            if let Ok(pf) = page::unmap(va) {
+                frame::free(pf);
+            }
+        }
+
+        'retry: loop {
+            let mut frames = alloc::vec::Vec::with_capacity(n_pages);
+
+            for _ in 0..n_pages {
+                let pf = frame::alloc().expect("vq frame alloc");
+                frames.push(pf);
+            }
+
+            let base = frames[0].start_address().as_u64();
+            for i in 1..n_pages {
+                let expect = base + (i as u64) * 4096;
+                if frames[i].start_address().as_u64() != expect {
+                    for pf in frames {
+                        frame::free(pf);
+                    }
+                    continue 'retry;
+                }
+            }
+
+            for (i, pf) in frames.iter().enumerate() {
+                let va = va_base + (i as u64) * 4096;
+                page::map_fixed(va, *pf, crate::kernel::mm::map::mapper::Prot::RW)
+                    .expect("vq map_fixed");
+            }
+
+            return Self {
+                va: va_base,
+                pa: PhysAddr::new(base),
+                size: n_pages * 4096,
+            };
         }
     }
 }
@@ -96,7 +141,7 @@ impl VirtQueue {
             let total = desc_sz + avail_sz + used_sz + 4096;
             let pages = (total + 4095) / 4096;
 
-            let slab = QueueMem::alloc_pages(pages);
+            let slab = QueueMem::alloc_pages_contig(pages);
             let slab_va = slab.va.as_u64();
 
             let desc_va = slab_va;
@@ -107,10 +152,14 @@ impl VirtQueue {
             let avail_pa = desc_pa + (avail_va - desc_va);
             let used_pa = desc_pa + (used_va - desc_va);
 
+            write_bytes(slab_va as *mut u8, 0, slab.size);
+            fence(SeqCst);
+
             (*common).queue_size = qsz;
             (*common).queue_desc = desc_pa;
             (*common).queue_driver = avail_pa;
             (*common).queue_device = used_pa;
+            fence(SeqCst);
 
             (*common).queue_enable = 1;
             fence(SeqCst);
@@ -141,21 +190,24 @@ impl VirtQueue {
     pub fn push(&mut self, head: u16) {
         unsafe {
             let a = &mut *self.avail;
-            let idx = (*a).idx;
+
+            let idx = read_volatile(&a.idx);
 
             let ring_ptr = (self.avail as *mut u8).add(size_of::<VirtqAvail>()) as *mut u16;
             let slot = ring_ptr.add((idx as usize) % (self.qsz as usize));
 
             write_volatile(slot, head);
             fence(SeqCst);
-            (*a).idx = idx.wrapping_add(1);
+            write_volatile(&mut a.idx, idx.wrapping_add(1));
+            fence(SeqCst);
         }
     }
 
     pub fn pop_used(&mut self) -> Option<VirtqUsedElem> {
         unsafe {
             let u = &mut *self.used;
-            if read_volatile(&u.idx) == self.last_used_idx {
+            let used_idx = read_volatile(&u.idx);
+            if used_idx == self.last_used_idx {
                 return None;
             }
 

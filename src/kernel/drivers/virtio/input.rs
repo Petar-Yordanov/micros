@@ -23,7 +23,7 @@ struct RawInputEvent {
     value: i32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum InputMsg {
     Key {
         code: u16,
@@ -107,7 +107,8 @@ impl VirtioInput {
         }
 
         unsafe {
-            let ev = core::ptr::read(buf_va.as_ptr::<RawInputEvent>());
+            // RawInputEvent is `packed`, so buffer may be unaligned.
+            let ev = core::ptr::read_unaligned(buf_va.as_ptr::<RawInputEvent>());
             let msg = match ev.etype {
                 0x01 => InputMsg::Key {
                     code: ev.code,
@@ -141,6 +142,8 @@ pub fn count_devices() -> usize {
 }
 
 pub(crate) fn try_attach(regs: VirtioPciRegs) -> bool {
+    ensure_globals();
+
     unsafe {
         if !pci::negotiate_features(regs.common) {
             return false;

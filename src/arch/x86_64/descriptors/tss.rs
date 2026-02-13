@@ -50,3 +50,10 @@ pub fn descriptor_for(ptr: *const TaskStateSegment) -> (u64, u64) {
         Descriptor::UserSegment(_) => unreachable!("tss_segment must be SystemSegment"),
     }
 }
+
+pub fn set_rsp0_top(rsp0_top: u64) {
+    let tss = TSS.get().expect("TSS not initialized") as *const TaskStateSegment as *mut TaskStateSegment;
+    unsafe {
+        (*tss).privilege_stack_table[0] = VirtAddr::new(rsp0_top);
+    }
+}
