@@ -1,13 +1,8 @@
-# MicrOS64 Makefile (kernel + userland + ISO + disk lifecycle)
-
 LIMINE_DIR ?= $(PWD)/Limine
 
 DISK      := disk.img
 DISK_SIZE := 1G
 
-# FS is mandatory for disk actions:
-#   make create-disk FS=fat32
-#   make create-disk FS=ext2
 FS ?=
 
 ISO       := micros64.iso

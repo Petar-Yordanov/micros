@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 
+// TODO: Fix naming convention
+
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FbInfo {
