@@ -1,0 +1,14 @@
+[package]
+name = "wm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+micros-abi = { workspace = true }
+rlibc = { path = "../rlibc" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

@@ -150,7 +150,6 @@ fn map_all_bars(bus: u8, dev: u8, func: u8, regs: &mut VirtioPciRegs) {
             continue;
         }
 
-        // I/O BAR
         if (bar_lo & 1) != 0 {
             i += 1;
             continue;

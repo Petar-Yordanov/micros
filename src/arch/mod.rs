@@ -12,6 +12,7 @@ pub mod x86_64 {
     pub mod interrupts {
         pub mod irq;
         pub mod isr;
+        pub mod syscall_entry;
     }
 
     pub mod legacy {

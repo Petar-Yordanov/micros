@@ -1,4 +1,7 @@
+use crate::arch::x86_64::descriptors::tss;
+use crate::kernel::sched::proc as kproc;
 use crate::sprintln;
+
 use alloc::{boxed::Box, collections::VecDeque};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use spin::Mutex;
@@ -8,7 +11,7 @@ pub type TaskId = u64;
 pub type Pid = u64;
 
 extern "C" {
-    fn switch_context(old: *mut Context, new: *const Context);
+    fn switch_context(old: *mut u8, new: *const u8);
 }
 
 #[allow(dead_code)]
@@ -93,10 +96,12 @@ fn idle_ptr() -> *mut Task {
     }
     p
 }
+
 #[inline]
 pub fn jiffies() -> u64 {
     JIFFIES.load(Ordering::Relaxed)
 }
+
 #[inline]
 pub fn ms_to_ticks(ms: u64) -> u64 {
     ms
@@ -186,10 +191,11 @@ pub fn spawn_kthread(
     });
 
     sprintln!(
-        "[task] spawn tid={} name={} kstack_top={:#x}",
+        "[task] spawn tid={} name={} kstack_top={:#x} saved_rsp={:#x}",
         tid,
         name,
-        kstack_top.as_u64()
+        kstack_top.as_u64(),
+        sp
     );
 
     let raw = Box::into_raw(t);
@@ -241,7 +247,7 @@ pub fn on_tick() {
     for tp in runq.iter_mut() {
         let t = tp.get();
         unsafe {
-            if (*t).state == TaskState::Sleeping && (*t).wake_jiffies <= now {
+            if !t.is_null() && (*t).state == TaskState::Sleeping && (*t).wake_jiffies <= now {
                 (*t).state = TaskState::Runnable;
                 (*t).timeslice = DEFAULT_SLICE;
                 woke_any = true;
@@ -252,6 +258,23 @@ pub fn on_tick() {
 
     if woke_any {
         NEED_RESCHED.store(true, Ordering::Release);
+    }
+}
+
+#[inline(always)]
+unsafe fn prepare_next_task_machine_state(next_ptr: *mut Task) {
+    match (*next_ptr).kind {
+        TaskKind::UThread { pid } => {
+            if let Some(p) = kproc::for_pid(pid) {
+                p.aspace.activate();
+            } else {
+                sprintln!("[sched] warning: missing process for pid={} (UThread)", pid);
+            }
+            tss::set_rsp0_top((*next_ptr).kstack_top.as_u64());
+        }
+        TaskKind::KThread { .. } => {
+            tss::set_rsp0_top((*next_ptr).kstack_top.as_u64());
+        }
     }
 }
 
@@ -289,38 +312,12 @@ pub fn schedule() {
             }
         }
 
-        if picked.is_null() {
-            idle_ptr()
-        } else {
-            picked
-        }
+        if picked.is_null() { idle_ptr() } else { picked }
     };
 
     if next_ptr.is_null() {
         interrupts::enable();
         return;
-    }
-
-    unsafe {
-        let _cur_tid = if cur_ptr.is_null() { 0 } else { (*cur_ptr).tid };
-        let _next_tid = (*next_ptr).tid;
-        let _cur_st = if cur_ptr.is_null() {
-            TaskState::Zombie
-        } else {
-            (*cur_ptr).state
-        };
-        let _next_st = (*next_ptr).state;
-        let _rq_len = RUNQ.lock().len();
-        //sprintln!(
-        //    "[sched] RUNQ.len={} cur={:#018x}/tid={}({:?}) -> next={:#018x}/tid={}({:?})",
-        //    rq_len,
-        //    cur_ptr as u64,
-        //    cur_tid,
-        //    cur_st,
-        //    next_ptr as u64,
-        //    next_tid,
-        //    next_st
-        //);
     }
 
     if first_handoff {
@@ -329,19 +326,17 @@ pub fn schedule() {
                 (*next_ptr).timeslice = DEFAULT_SLICE;
             }
             (*next_ptr).state = TaskState::Running;
+            prepare_next_task_machine_state(next_ptr);
         }
-        *CURRENT.lock() = TaskPtr::new(next_ptr);
 
+        *CURRENT.lock() = TaskPtr::new(next_ptr);
         NEED_RESCHED.store(false, Ordering::Release);
 
-        //sprintln!(
-        //    "[sched] first handoff -> tid={} (no old ctx save)",
-        //    unsafe { (*next_ptr).tid }
-        //);
-        interrupts::enable();
-
         unsafe {
-            switch_context(addr_of_mut!(BOOT_DUMMY_CTX), addr_of!((*next_ptr).ctx));
+            switch_context(
+                addr_of_mut!(BOOT_DUMMY_CTX) as *mut u8,
+                addr_of!((*next_ptr).ctx) as *const u8,
+            );
         }
     }
 
@@ -372,36 +367,20 @@ pub fn schedule() {
             };
         }
         (*next_ptr).state = TaskState::Running;
-
-        //sprintln!(
-        //    "[sched] arming next tid={} -> Running (slice={})",
-        //    (*next_ptr).tid,
-        //    (*next_ptr).timeslice
-        //);
+        prepare_next_task_machine_state(next_ptr);
     }
 
     *CURRENT.lock() = TaskPtr::new(next_ptr);
     NEED_RESCHED.store(false, Ordering::Release);
 
-    //sprintln!(
-    //    "[sched] context switch: cur={:#018x}/tid={} -> next={:#018x}/tid={}",
-    //    cur_ptr as u64,
-    //    unsafe {
-    //        if cur_ptr.is_null() {
-    //            0
-    //        } else {
-    //            (*cur_ptr).tid
-    //        }
-    //    },
-    //    next_ptr as u64,
-    //    unsafe { (*next_ptr).tid }
-    //);
+    unsafe {
+        switch_context(
+            addr_of_mut!((*cur_ptr).ctx) as *mut u8,
+            addr_of!((*next_ptr).ctx) as *const u8,
+        );
+    }
 
     interrupts::enable();
-
-    unsafe {
-        switch_context(addr_of_mut!((*cur_ptr).ctx), addr_of!((*next_ptr).ctx));
-    }
 }
 
 extern "C" fn kthread_exit(_: *mut u8) -> ! {

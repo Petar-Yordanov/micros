@@ -1,9 +1,14 @@
 pub mod syscall {
     pub mod dispatch;
-    pub mod nr;
-    pub mod types;
-    pub mod user_api;
-    pub mod userbuf;
+    pub mod exec;
+    pub mod fb;
+    pub mod input;
+    pub mod log;
+    pub mod proc;
+    pub mod util;
+    pub mod vfs;
+
+    pub use dispatch::dispatch;
 }
 
 pub mod utils {
@@ -29,6 +34,9 @@ pub mod mm {
     pub mod aspace {
         pub mod address_space;
         pub mod user_copy;
+    }
+    pub mod user {
+        pub mod mapfb;
     }
 }
 
@@ -67,4 +75,13 @@ pub mod drivers {
 pub mod input {
     pub mod events;
     pub mod parser;
+}
+
+pub mod exec {
+    pub mod init;
+    pub mod elf;
+    pub mod path;
+    pub mod exec_impl;
+
+    pub use exec_impl::*;
 }

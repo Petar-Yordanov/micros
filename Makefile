@@ -3,21 +3,45 @@ LIMINE_DIR ?= $(PWD)/Limine
 DISK      := disk.img
 DISK_SIZE := 1G
 
-# FS is mandatory for disk actions:
-#   make create-disk FS=fat32
-#   make create-disk FS=ext2
 FS ?=
 
 ISO       := micros64.iso
 KERNEL    := target/x86_64-unknown-none/debug/micros64
 DISK_ABS  := $(abspath $(DISK))
 
-all: $(ISO)
+TARGET_JSON := $(abspath x86_64-unknown-none.json)
+
+USER_WM_DIR     := src/user/wm
+USER_TARGET_DIR := $(abspath src/user/target)
+USER_INIT_BIN   := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
+
+.PHONY: all iso
+all: iso
+iso: $(ISO)
+
+.PHONY: build-kernel
+build-kernel: $(KERNEL)
 
 $(KERNEL):
+	@echo "[mk] building kernel -> $(KERNEL)"
 	cargo +nightly build -Z build-std=core,alloc
 
+.PHONY: build-user
+build-user: $(USER_INIT_BIN)
+
+$(USER_INIT_BIN):
+	@echo "[mk] building user wm -> $(USER_INIT_BIN)"
+	@mkdir -p $(USER_TARGET_DIR)
+	@cd $(USER_WM_DIR) && \
+	  cargo +nightly build \
+	    -Z build-std=core,alloc \
+	    -Z json-target-spec \
+	    --target $(TARGET_JSON) \
+	    --target-dir $(USER_TARGET_DIR)
+	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] expected init bin missing: $(USER_INIT_BIN)"; exit 1)
+
 $(ISO): $(KERNEL) limine.conf limine.cfg
+	@echo "[mk] building ISO -> $(ISO)"
 	xorriso -as mkisofs \
 	  -V "MICROS64" -R -J \
 	  -o $(ISO) \
@@ -35,7 +59,14 @@ $(ISO): $(KERNEL) limine.conf limine.cfg
 	  /limine-uefi-cd.bin=$(LIMINE_DIR)/limine-uefi-cd.bin
 	$(LIMINE_DIR)/limine bios-install $(ISO)
 
-.PHONY: check-fs
+.PHONY: check-vars check-fs
+check-vars:
+	@set -e; \
+	  if [ -z "$(DISK)" ] || [ -z "$(DISK_SIZE)" ]; then \
+	    echo "[mk][ERR] DISK/DISK_SIZE not set (DISK='$(DISK)' DISK_SIZE='$(DISK_SIZE)')"; \
+	    exit 1; \
+	  fi
+
 check-fs:
 	@set -e; \
 	  if [ -z "$(FS)" ]; then \
@@ -48,31 +79,17 @@ check-fs:
 	  fi
 
 $(DISK):
-	@echo "[mk] creating $(DISK) ($(DISK_SIZE))"
-	@qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null
+	@test -f "$(DISK)" || qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null
 
-.PHONY: create-disk
-create-disk: check-fs
-	@set -e; \
-	  echo "[mk] recreating disk ($(DISK_SIZE)) FS=$(FS)"; \
-	  rm -f $(DISK); \
-	  qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null; \
-	  $(MAKE) format-disk FS=$(FS); \
-	  $(MAKE) populate-disk FS=$(FS); \
-	  echo "[mk] create-disk done (FS=$(FS))"
+.PHONY: format-disk populate-disk
 
-.PHONY: format-disk
-format-disk: check-fs $(DISK)
+format-disk: check-vars check-fs $(DISK)
 	@set -e; \
 	  if [ "$(FS)" = "fat32" ]; then \
 	    echo "[mk] formatting $(DISK) as partitionless FAT32"; \
 	    mkfs.fat -F 32 -n MICROS64 $(DISK) >/dev/null; \
 	    echo -n "[mk] verify boot sig @510..511: "; \
 	    dd if=$(DISK) bs=1 skip=510 count=2 2>/dev/null | od -An -tx1; \
-	    echo -n "[mk] BPB bytes/sector (offset 11..12): "; \
-	    dd if=$(DISK) bs=1 skip=11 count=2 2>/dev/null | od -An -tx1; \
-	    echo -n "[mk] BPB root_clus (FAT32, offset 44..47): "; \
-	    dd if=$(DISK) bs=1 skip=44 count=4 2>/dev/null | od -An -tx1; \
 	  elif [ "$(FS)" = "ext2" ]; then \
 	    echo "[mk] formatting $(DISK) as partitionless ext2"; \
 	    mkfs.ext2 -F -b 4096 -L MICROS64 $(DISK) >/dev/null; \
@@ -80,78 +97,78 @@ format-disk: check-fs $(DISK)
 	    dd if=$(DISK) bs=1 skip=1080 count=2 2>/dev/null | od -An -tx1; \
 	  fi
 
-.PHONY: populate-disk
-populate-disk: check-fs $(DISK)
+populate-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
+	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] missing init bin: $(USER_INIT_BIN)"; exit 1)
 	@set -e; \
 	  if [ "$(FS)" = "fat32" ]; then \
-	    echo "[mk] populating /hello.txt and /testdir/ (FAT32)"; \
+	    echo "[mk] populating disk (FAT32): /hello.txt, /testdir/, /bin/init.elf"; \
 	    tmp=$$(mktemp); \
 	    printf "MicrOS says hi!\n" > $$tmp; \
-        mmd   -D o -i $(DISK) ::/testdir >/dev/null 2>&1 || true; \
-        mcopy -D o -o -i $(DISK) $$tmp ::/hello.txt >/dev/null 2>&1 || true; \
+	    mmd   -D o -i $(DISK) ::/testdir >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $$tmp ::/hello.txt >/dev/null 2>&1 || true; \
+	    mmd   -D o -i $(DISK) ::/bin >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_INIT_BIN) ::/bin/init.elf >/dev/null 2>&1 || true; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \
 	  elif [ "$(FS)" = "ext2" ]; then \
-	    echo "[mk] populating /hello.txt and /testdir/ (ext2 via debugfs)"; \
+	    echo "[mk] populating disk (ext2 via debugfs): /hello.txt, /testdir/, /bin/init.elf"; \
 	    tmp=$$(mktemp); \
 	    printf "MicrOS says hi!\n" > $$tmp; \
 	    debugfs -w -R "mkdir /testdir" $(DISK) >/dev/null 2>&1 || true; \
 	    debugfs -w -R "write $$tmp /hello.txt" $(DISK) >/dev/null; \
+	    debugfs -w -R "mkdir /bin" $(DISK) >/dev/null 2>&1 || true; \
+	    debugfs -w -R "write $(USER_INIT_BIN) /bin/init.elf" $(DISK) >/dev/null; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \
 	  fi
 
-.PHONY: ensure-disk
-ensure-disk: check-fs $(DISK)
+.PHONY: create-disk setup-disk recreate-disk
+
+create-disk: check-vars check-fs
 	@set -e; \
-	  if [ "$(FS)" = "fat32" ]; then \
-	    sig=$$(dd if=$(DISK) bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n'); \
-	    if [ "$$sig" = "55aa" ]; then \
-	      echo "[ok] FAT VBR boot signature present (0x55AA)"; \
-	    else \
-	      echo "[mk] disk not FAT (boot sig missing) -> recreating"; \
-	      $(MAKE) create-disk FS=$(FS); \
-	      exit 0; \
-	    fi; \
-	    $(MAKE) populate-disk FS=$(FS); \
-	  elif [ "$(FS)" = "ext2" ]; then \
-	    magic=$$(dd if=$(DISK) bs=1 skip=1080 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n'); \
-	    if [ "$$magic" = "53ef" ]; then \
-	      echo "[ok] ext2 superblock magic present (0xEF53)"; \
-	    else \
-	      echo "[mk] disk not ext2 (magic missing) -> recreating"; \
-	      $(MAKE) create-disk FS=$(FS); \
-	      exit 0; \
-	    fi; \
-	    $(MAKE) populate-disk FS=$(FS); \
-	  fi
+	  echo "[mk] creating fresh disk ($(DISK_SIZE)) FS=$(FS)"; \
+	  rm -f $(DISK); \
+	  qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null; \
+	  echo "[mk] create-disk done"
+
+setup-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
+	@set -e; \
+	  echo "[mk] setting up disk FS=$(FS)"; \
+	  $(MAKE) format-disk FS=$(FS); \
+	  $(MAKE) populate-disk FS=$(FS); \
+	  echo "[mk] setup-disk done (FS=$(FS))"
+
+recreate-disk: check-vars check-fs
+	@$(MAKE) create-disk FS=$(FS)
+	@$(MAKE) setup-disk  FS=$(FS)
 
 .PHONY: infer-fs
-infer-fs: $(DISK)
+infer-fs: check-vars
 	@set -e; \
+	  if [ ! -f "$(DISK)" ]; then echo ""; exit 0; fi; \
 	  sig=$$(dd if=$(DISK) bs=1 skip=510 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n'); \
-	  if [ "$$sig" = "55aa" ]; then \
-	    echo "fat32"; exit 0; \
-	  fi; \
+	  if [ "$$sig" = "55aa" ]; then echo "fat32"; exit 0; fi; \
 	  magic=$$(dd if=$(DISK) bs=1 skip=1080 count=2 2>/dev/null | od -An -tx1 | tr -d ' \n'); \
-	  if [ "$$magic" = "53ef" ]; then \
-	    echo "ext2"; exit 0; \
-	  fi; \
+	  if [ "$$magic" = "53ef" ]; then echo "ext2"; exit 0; fi; \
 	  echo ""; exit 0
 
-.PHONY: run
-run: $(ISO) $(DISK)
+.PHONY: run run-just
+run: run-just
+
+run-just: $(ISO) check-vars
 	@set -e; \
 	  fs="$$( $(MAKE) -s infer-fs )"; \
 	  if [ -z "$$fs" ]; then \
-	    echo "[mk][ERR] cannot infer FS from $(DISK). Create one explicitly:"; \
-	    echo "           make create-disk FS=fat32   OR   make create-disk FS=ext2"; \
+	    echo "[mk][ERR] $(DISK) is missing or unformatted."; \
+	    echo "           Do:"; \
+	    echo "             make create-disk FS=fat32|ext2"; \
+	    echo "             make setup-disk  FS=fat32|ext2"; \
 	    exit 1; \
 	  fi; \
 	  echo "[mk] inferred FS=$$fs for $(DISK)"; \
-	  $(MAKE) ensure-disk FS=$$fs; \
+	  echo "[mk] run-just: not modifying disk"; \
 	  qemu-system-x86_64 \
 		-M q35 -m 512M -display gtk \
 		-serial stdio -monitor none \
@@ -162,10 +179,27 @@ run: $(ISO) $(DISK)
 		-blockdev driver=raw,file=fi0,node-name=vd0 \
 		-device virtio-blk-pci,drive=vd0,disable-legacy=on \
 		-device virtio-keyboard-pci,disable-legacy=on \
-		-no-reboot -no-shutdown \
-		-device virtio-mouse-pci,disable-legacy=on
+		-device virtio-mouse-pci,disable-legacy=on \
+		-no-reboot -no-shutdown
 
-.PHONY: clean
-clean:
+.PHONY: clean clean-kernel clean-user clean-iso clean-disk clean-qemu-log
+clean: clean-kernel clean-user clean-iso clean-disk clean-qemu-log
+
+clean-kernel:
+	@echo "[mk] cleaning kernel (cargo clean at repo root)"
 	cargo clean
-	rm -f $(ISO) $(DISK)
+
+clean-user:
+	@echo "[mk] cleaning userland target dir -> $(USER_TARGET_DIR)"
+	@rm -rf $(USER_TARGET_DIR)
+
+clean-iso:
+	@echo "[mk] removing ISO -> $(ISO)"
+	@rm -f $(ISO)
+
+clean-disk:
+	@echo "[mk] removing disk -> $(DISK)"
+	@rm -f $(DISK)
+
+clean-qemu-log:
+	@rm -f qemu.log

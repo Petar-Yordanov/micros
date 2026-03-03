@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = [
+  "rlibc",
+  "init",
+  "wm",
+  "apps/hello",
+]
+
+default-members = [
+  "rlibc",
+  "init",
+  "wm",
+]
+
+[workspace.dependencies]
+micros-abi = { path = "../../crates/abi" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

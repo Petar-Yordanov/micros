@@ -70,12 +70,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "micros-abi"
+version = "0.1.0"
+
+[[package]]
 name = "micros64"
 version = "0.1.0"
 dependencies = [
  "font8x8",
  "heapless",
  "limine",
+ "micros-abi",
  "spin",
  "uart_16550",
  "x86_64",
