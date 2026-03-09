@@ -358,10 +358,16 @@ impl Ext2 {
     }
 
     fn inode_mode_size_blocks(&self, ino: u32) -> Result<(u16, u32, [u32; 15]), Ext2Err> {
+        ksprintln!("[ext2][inode] read ino={}", ino);
+
         let raw = self.read_inode_raw(ino)?;
+        ksprintln!("[ext2][inode] ino={} raw_len={}", ino, raw.len());
+
         if raw.len() < 100 {
+            ksprintln!("[ext2][inode] ino={} raw too small", ino);
             return Err(Ext2Err::BadSuperblock);
         }
+
         let mode = rd16(&raw, INODE_OFF_MODE);
         let size = rd32(&raw, INODE_OFF_SIZE);
 
@@ -369,6 +375,26 @@ impl Ext2 {
         for i in 0..15usize {
             blkptrs[i] = rd32(&raw, INODE_OFF_BLOCK + i * 4);
         }
+
+        ksprintln!(
+            "[ext2][inode] ino={} mode={:#x} size={} ptrs=[{},{},{},{},{},{},{},{},{},{},{},{}]",
+            ino,
+            mode,
+            size,
+            blkptrs[0],
+            blkptrs[1],
+            blkptrs[2],
+            blkptrs[3],
+            blkptrs[4],
+            blkptrs[5],
+            blkptrs[6],
+            blkptrs[7],
+            blkptrs[8],
+            blkptrs[9],
+            blkptrs[10],
+            blkptrs[11],
+        );
+
         Ok((mode, size, blkptrs))
     }
 
