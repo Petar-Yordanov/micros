@@ -45,9 +45,11 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
     ksprintln!("[vfs] ext2 selftest (mkdir/write/read/list)");
 
     vfs_mkdir_p("/TestDir/Sub")?;
+    ksprintln!("[vfs] ext2 mkdir OK");
 
     let msg = b"Hello via VFS!\n";
     vfs_write_overwrite("/TestDir/Sub/Note.txt", msg)?;
+    ksprintln!("[vfs] ext2 overwrite OK");
 
     match vfs_read("/TestDir/Sub/Note.txt") {
         Ok(buf) if buf == msg => ksprintln!("[vfs] ext2 readback OK"),
@@ -56,7 +58,11 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
     }
 
     let ap = b"APPEND!";
+    ksprintln!("[vfs] ext2 append begin");
     vfs_write("/TestDir/Sub/Note.txt", ap)?;
+    ksprintln!("[vfs] ext2 append returned");
+
+    ksprintln!("[vfs] ext2 read-after-append begin");
     match vfs_read("/TestDir/Sub/Note.txt") {
         Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => {
             ksprintln!("[vfs] ext2 append OK")
@@ -65,6 +71,7 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
         Err(e) => return Err(e),
     }
 
+    ksprintln!("[vfs] ext2 ci read begin");
     match vfs_read("/testdir/sub/note.txt") {
         Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => {
             ksprintln!("[vfs] ext2 case-insensitive lookup OK")
