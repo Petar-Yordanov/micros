@@ -1,6 +1,7 @@
 pub mod x86_64 {
     pub mod cpu {
         pub mod cpuid;
+        pub mod fpu;
     }
 
     pub mod descriptors {

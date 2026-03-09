@@ -11,9 +11,18 @@ DISK_ABS  := $(abspath $(DISK))
 
 TARGET_JSON := $(abspath x86_64-unknown-none.json)
 
-USER_WM_DIR     := src/user/wm
+# ---- Userland build configuration ----
 USER_TARGET_DIR := $(abspath src/user/target)
-USER_INIT_BIN   := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
+
+USER_INIT_DIR    := src/user/init
+USER_WM_DIR      := src/user/wm
+USER_IPC_SRV_DIR := src/user/apps/ipc_srv
+USER_IPC_CLI_DIR := src/user/apps/ipc_cli
+
+USER_INIT_BIN    := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/init
+USER_WM_BIN      := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
+USER_IPC_SRV_BIN := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/ipc_srv
+USER_IPC_CLI_BIN := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/ipc_cli
 
 .PHONY: all iso
 all: iso
@@ -27,10 +36,23 @@ $(KERNEL):
 	cargo +nightly build -Z build-std=core,alloc
 
 .PHONY: build-user
-build-user: $(USER_INIT_BIN)
+build-user: $(USER_INIT_BIN) $(USER_WM_BIN) $(USER_IPC_SRV_BIN) $(USER_IPC_CLI_BIN)
 
+# Build init
 $(USER_INIT_BIN):
-	@echo "[mk] building user wm -> $(USER_INIT_BIN)"
+	@echo "[mk] building user init -> $(USER_INIT_BIN)"
+	@mkdir -p $(USER_TARGET_DIR)
+	@cd $(USER_INIT_DIR) && \
+	  cargo +nightly build \
+	    -Z build-std=core,alloc \
+	    -Z json-target-spec \
+	    --target $(TARGET_JSON) \
+	    --target-dir $(USER_TARGET_DIR)
+	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] expected init bin missing: $(USER_INIT_BIN)"; exit 1)
+
+# Build wm
+$(USER_WM_BIN):
+	@echo "[mk] building user wm -> $(USER_WM_BIN)"
 	@mkdir -p $(USER_TARGET_DIR)
 	@cd $(USER_WM_DIR) && \
 	  cargo +nightly build \
@@ -38,7 +60,31 @@ $(USER_INIT_BIN):
 	    -Z json-target-spec \
 	    --target $(TARGET_JSON) \
 	    --target-dir $(USER_TARGET_DIR)
-	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] expected init bin missing: $(USER_INIT_BIN)"; exit 1)
+	@test -f "$(USER_WM_BIN)" || (echo "[mk][ERR] expected wm bin missing: $(USER_WM_BIN)"; exit 1)
+
+# Build ipc_srv
+$(USER_IPC_SRV_BIN):
+	@echo "[mk] building user ipc_srv -> $(USER_IPC_SRV_BIN)"
+	@mkdir -p $(USER_TARGET_DIR)
+	@cd $(USER_IPC_SRV_DIR) && \
+	  cargo +nightly build \
+	    -Z build-std=core,alloc \
+	    -Z json-target-spec \
+	    --target $(TARGET_JSON) \
+	    --target-dir $(USER_TARGET_DIR)
+	@test -f "$(USER_IPC_SRV_BIN)" || (echo "[mk][ERR] expected ipc_srv bin missing: $(USER_IPC_SRV_BIN)"; exit 1)
+
+# Build ipc_cli
+$(USER_IPC_CLI_BIN):
+	@echo "[mk] building user ipc_cli -> $(USER_IPC_CLI_BIN)"
+	@mkdir -p $(USER_TARGET_DIR)
+	@cd $(USER_IPC_CLI_DIR) && \
+	  cargo +nightly build \
+	    -Z build-std=core,alloc \
+	    -Z json-target-spec \
+	    --target $(TARGET_JSON) \
+	    --target-dir $(USER_TARGET_DIR)
+	@test -f "$(USER_IPC_CLI_BIN)" || (echo "[mk][ERR] expected ipc_cli bin missing: $(USER_IPC_CLI_BIN)"; exit 1)
 
 $(ISO): $(KERNEL) limine.conf limine.cfg
 	@echo "[mk] building ISO -> $(ISO)"
@@ -97,28 +143,37 @@ format-disk: check-vars check-fs $(DISK)
 	    dd if=$(DISK) bs=1 skip=1080 count=2 2>/dev/null | od -An -tx1; \
 	  fi
 
-populate-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
-	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] missing init bin: $(USER_INIT_BIN)"; exit 1)
+populate-disk: check-vars check-fs $(DISK) build-user
+	@test -f "$(USER_INIT_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_INIT_BIN)"; exit 1)
+	@test -f "$(USER_WM_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_WM_BIN)"; exit 1)
+	@test -f "$(USER_IPC_SRV_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_IPC_SRV_BIN)"; exit 1)
+	@test -f "$(USER_IPC_CLI_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_IPC_CLI_BIN)"; exit 1)
 	@set -e; \
 	  if [ "$(FS)" = "fat32" ]; then \
-	    echo "[mk] populating disk (FAT32): /hello.txt, /testdir/, /bin/init.elf"; \
+	    echo "[mk] populating disk (FAT32): /hello.txt, /testdir/, /bin/init.elf, /bin/wm.elf, /bin/ipc_srv.elf, /bin/ipc_cli.elf"; \
 	    tmp=$$(mktemp); \
 	    printf "MicrOS says hi!\n" > $$tmp; \
 	    mmd   -D o -i $(DISK) ::/testdir >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $$tmp ::/hello.txt >/dev/null 2>&1 || true; \
-	    mmd   -D o -i $(DISK) ::/bin >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $(USER_INIT_BIN) ::/bin/init.elf >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $$tmp               ::/hello.txt       >/dev/null 2>&1 || true; \
+	    mmd   -D o -i $(DISK) ::/bin                 >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_INIT_BIN)    ::/bin/init.elf    >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_WM_BIN)      ::/bin/wm.elf      >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_IPC_SRV_BIN) ::/bin/ipc_srv.elf >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_IPC_CLI_BIN) ::/bin/ipc_cli.elf >/dev/null 2>&1 || true; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \
 	  elif [ "$(FS)" = "ext2" ]; then \
-	    echo "[mk] populating disk (ext2 via debugfs): /hello.txt, /testdir/, /bin/init.elf"; \
+	    echo "[mk] populating disk (ext2 via debugfs): /hello.txt, /testdir/, /bin/init.elf, /bin/wm.elf, /bin/ipc_srv.elf, /bin/ipc_cli.elf"; \
 	    tmp=$$(mktemp); \
 	    printf "MicrOS says hi!\n" > $$tmp; \
 	    debugfs -w -R "mkdir /testdir" $(DISK) >/dev/null 2>&1 || true; \
 	    debugfs -w -R "write $$tmp /hello.txt" $(DISK) >/dev/null; \
 	    debugfs -w -R "mkdir /bin" $(DISK) >/dev/null 2>&1 || true; \
 	    debugfs -w -R "write $(USER_INIT_BIN) /bin/init.elf" $(DISK) >/dev/null; \
+	    debugfs -w -R "write $(USER_WM_BIN) /bin/wm.elf" $(DISK) >/dev/null; \
+	    debugfs -w -R "write $(USER_IPC_SRV_BIN) /bin/ipc_srv.elf" $(DISK) >/dev/null; \
+	    debugfs -w -R "write $(USER_IPC_CLI_BIN) /bin/ipc_cli.elf" $(DISK) >/dev/null; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \
@@ -133,16 +188,16 @@ create-disk: check-vars check-fs
 	  qemu-img create -f raw $(DISK) $(DISK_SIZE) >/dev/null; \
 	  echo "[mk] create-disk done"
 
-setup-disk: check-vars check-fs $(DISK) $(USER_INIT_BIN)
+setup-disk: check-vars check-fs $(DISK)
 	@set -e; \
 	  echo "[mk] setting up disk FS=$(FS)"; \
-	  $(MAKE) format-disk FS=$(FS); \
-	  $(MAKE) populate-disk FS=$(FS); \
+	  $(MAKE) format-disk FS=$(FS) DISK=$(DISK) DISK_SIZE=$(DISK_SIZE); \
+	  $(MAKE) populate-disk FS=$(FS) DISK=$(DISK) DISK_SIZE=$(DISK_SIZE); \
 	  echo "[mk] setup-disk done (FS=$(FS))"
 
 recreate-disk: check-vars check-fs
-	@$(MAKE) create-disk FS=$(FS)
-	@$(MAKE) setup-disk  FS=$(FS)
+	@$(MAKE) create-disk FS=$(FS) DISK=$(DISK) DISK_SIZE=$(DISK_SIZE)
+	@$(MAKE) setup-disk  FS=$(FS) DISK=$(DISK) DISK_SIZE=$(DISK_SIZE)
 
 .PHONY: infer-fs
 infer-fs: check-vars
@@ -159,7 +214,7 @@ run: run-just
 
 run-just: $(ISO) check-vars
 	@set -e; \
-	  fs="$$( $(MAKE) -s infer-fs )"; \
+	  fs="$$( $(MAKE) -s infer-fs DISK=$(DISK) DISK_SIZE=$(DISK_SIZE) )"; \
 	  if [ -z "$$fs" ]; then \
 	    echo "[mk][ERR] $(DISK) is missing or unformatted."; \
 	    echo "           Do:"; \
@@ -170,17 +225,17 @@ run-just: $(ISO) check-vars
 	  echo "[mk] inferred FS=$$fs for $(DISK)"; \
 	  echo "[mk] run-just: not modifying disk"; \
 	  qemu-system-x86_64 \
-		-M q35 -m 512M -display gtk \
-		-serial stdio -monitor none \
-		-boot order=d,menu=on \
-		-cdrom $(ISO) \
-		-d int,guest_errors,cpu_reset -D qemu.log -device isa-debug-exit \
-		-blockdev driver=file,filename=$(DISK_ABS),node-name=fi0 \
-		-blockdev driver=raw,file=fi0,node-name=vd0 \
-		-device virtio-blk-pci,drive=vd0,disable-legacy=on \
-		-device virtio-keyboard-pci,disable-legacy=on \
-		-device virtio-mouse-pci,disable-legacy=on \
-		-no-reboot -no-shutdown
+	        -M q35 -m 512M -display gtk \
+	        -serial stdio -monitor none \
+	        -boot order=d,menu=on \
+	        -cdrom $(ISO) \
+	        -d int,guest_errors,cpu_reset -D qemu.log -device isa-debug-exit \
+	        -blockdev driver=file,filename=$(DISK_ABS),node-name=fi0 \
+	        -blockdev driver=raw,file=fi0,node-name=vd0 \
+	        -device virtio-blk-pci,drive=vd0,disable-legacy=on \
+	        -device virtio-keyboard-pci,disable-legacy=on \
+	        -device virtio-mouse-pci,disable-legacy=on \
+	        -no-reboot -no-shutdown
 
 .PHONY: clean clean-kernel clean-user clean-iso clean-disk clean-qemu-log
 clean: clean-kernel clean-user clean-iso clean-disk clean-qemu-log

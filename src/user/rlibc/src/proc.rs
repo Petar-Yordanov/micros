@@ -1,10 +1,10 @@
 extern crate alloc;
 
 use micros_abi::sysnr;
-use micros_abi::types::{ProcInfo, ProcSpawnArgs};
+use micros_abi::types::{ProcInfo, ProcListEntry, ProcSpawnArgs};
 
 use crate::errno::{cvt, Errno};
-use crate::syscall::{syscall0, syscall1, syscall2};
+use crate::syscall::{syscall0, syscall1, syscall2, syscall3};
 
 pub type Pid = u32;
 
@@ -25,14 +25,14 @@ pub fn exit(code: u64) -> ! {
 #[inline(always)]
 pub fn spawn(path: &str) -> Result<Pid, Errno> {
     let args = ProcSpawnArgs {
-        pathPtr: path.as_ptr() as u64,
-        pathLen: path.len() as u64,
-        argvPtr: 0,
+        path_ptr: path.as_ptr() as u64,
+        path_len: path.len() as u64,
+        argv_ptr: 0,
         argc: 0,
         flags: 0,
     };
 
-    let r = cvt(unsafe { syscall1(sysnr::SYS_PROC_SPAWN, &args as *const _ as u64) })?;
+    let r = cvt(syscall1(sysnr::SYS_PROC_SPAWN, &args as *const _ as u64))?;
     Ok(r as Pid)
 }
 
@@ -48,11 +48,36 @@ pub fn kill(pid: Pid, signal_or_reason: u64) -> Result<(), Errno> {
 }
 
 #[inline(always)]
-pub fn list(out: &mut [ProcInfo]) -> Result<usize, Errno> {
-    let r = cvt(syscall2(
+pub fn proc_count() -> Result<u64, Errno> {
+    let mut total: u64 = 0;
+    let _ = cvt(syscall3(
+        sysnr::SYS_PROC_LIST,
+        0,
+        0,
+        &mut total as *mut _ as u64,
+    ))?;
+    Ok(total)
+}
+
+#[inline(always)]
+pub fn list(out: &mut [ProcListEntry]) -> Result<(usize, usize), Errno> {
+    let mut total: u64 = 0;
+    let written = cvt(syscall3(
         sysnr::SYS_PROC_LIST,
         out.as_mut_ptr() as u64,
         out.len() as u64,
+        &mut total as *mut _ as u64,
     ))?;
-    Ok(r as usize)
+    Ok((written as usize, total as usize))
+}
+
+#[inline(always)]
+pub fn info(pid: Pid) -> Result<ProcInfo, Errno> {
+    let mut out = ProcInfo::default();
+    cvt(syscall2(
+        sysnr::SYS_PROC_INFO,
+        pid as u64,
+        &mut out as *mut _ as u64,
+    ))?;
+    Ok(out)
 }

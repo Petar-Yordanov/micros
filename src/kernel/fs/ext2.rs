@@ -6,7 +6,7 @@ use alloc::{string::String, vec, vec::Vec};
 use core::cmp::min;
 
 use crate::kernel::drivers::virtio::blk::{read_at, write_at};
-use crate::sprintln;
+use crate::ksprintln;
 
 const SEC: usize = 512;
 
@@ -184,7 +184,7 @@ impl Ext2 {
             bgdt_off,
         };
 
-        sprintln!(
+        ksprintln!(
             "[ext2] mount: bsz={} bpg={} ipg={} inode_sz={} first_inode={} bgdt_off={:#x}",
             fs.block_size,
             fs.blocks_per_group,
@@ -345,22 +345,54 @@ impl Ext2 {
         wr32(raw, off, v);
     }
 
-    fn read_indirect_block_list(&self, block: u32) -> Result<Vec<u32>, Ext2Err> {
+    fn read_u32_block_entry(&self, block: u32, index: u32) -> Result<u32, Ext2Err> {
         if block == 0 {
-            return Ok(Vec::new());
+            return Ok(0);
         }
+
+        let per_block = self.block_size / 4;
+        if index >= per_block {
+            return Ok(0);
+        }
+
         let bs = self.block_size as usize;
         let mut buf = vec![0u8; bs];
         self.read_block(block, &mut buf)?;
-        let mut out = Vec::with_capacity(bs / 4);
-        for i in 0..(bs / 4) {
-            let b = rd32(&buf, i * 4);
-            if b == 0 {
-                break;
-            }
-            out.push(b);
+        Ok(rd32(&buf, (index as usize) * 4))
+    }
+
+    fn inode_data_block_no(&self, blkptrs: &[u32; 15], file_block_idx: u32) -> Result<u32, Ext2Err> {
+        let per_block = self.block_size / 4;
+
+        // direct
+        if file_block_idx < 12 {
+            return Ok(blkptrs[file_block_idx as usize]);
         }
-        Ok(out)
+
+        // single indirect
+        let idx = file_block_idx - 12;
+        if idx < per_block {
+            return self.read_u32_block_entry(blkptrs[12], idx);
+        }
+
+        // double indirect
+        let idx = idx - per_block;
+        let doubly_cap = per_block
+            .checked_mul(per_block)
+            .ok_or(Ext2Err::Unsupported)?;
+
+        if idx < doubly_cap {
+            let outer = idx / per_block;
+            let inner = idx % per_block;
+
+            let l1 = self.read_u32_block_entry(blkptrs[13], outer)?;
+            if l1 == 0 {
+                return Ok(0);
+            }
+            return self.read_u32_block_entry(l1, inner);
+        }
+
+        Err(Ext2Err::Unsupported)
     }
 
     fn read_inode_data(&self, ino: u32, max_bytes: usize) -> Result<Vec<u8>, Ext2Err> {
@@ -375,39 +407,25 @@ impl Ext2 {
         }
 
         let bs = self.block_size as usize;
+        let blocks_needed = (want + bs - 1) / bs;
+
         let mut out = Vec::with_capacity(want);
 
-        // direct blocks
-        for i in 0..12usize {
-            if out.len() >= want {
-                break;
-            }
-            let b = blkptrs[i];
-            if b == 0 {
-                break;
-            }
+        for file_blk in 0..(blocks_needed as u32) {
+            let disk_blk = self.inode_data_block_no(&blkptrs, file_blk)?;
+
             let mut buf = vec![0u8; bs];
-            self.read_block(b, &mut buf)?;
+            if disk_blk != 0 {
+                self.read_block(disk_blk, &mut buf)?;
+            } else {
+                buf.fill(0);
+            }
+
             let take = min(bs, want - out.len());
             out.extend_from_slice(&buf[..take]);
-        }
 
-        if out.len() >= want {
-            out.truncate(want);
-            return Ok(out);
-        }
-
-        let ind = blkptrs[12];
-        if ind != 0 {
-            let list = self.read_indirect_block_list(ind)?;
-            for b in list {
-                if out.len() >= want {
-                    break;
-                }
-                let mut buf = vec![0u8; bs];
-                self.read_block(b, &mut buf)?;
-                let take = min(bs, want - out.len());
-                out.extend_from_slice(&buf[..take]);
+            if out.len() >= want {
+                break;
             }
         }
 
@@ -626,7 +644,6 @@ impl Ext2 {
         let bit = Self::bitmap_find_and_set(&mut bm, start, limit).ok_or(Ext2Err::Full)?;
         self.write_block(ibm_blk, &bm)?;
 
-        // update counts
         self.sb_dec_free_inodes(1)?;
         self.gd_dec_free_inodes(group, 1)?;
         if is_dir {
@@ -712,12 +729,12 @@ impl Ext2 {
     fn inode_init_common(raw: &mut [u8], mode: u16, links: u16) {
         raw.fill(0);
         wr16(raw, INODE_OFF_MODE, mode);
-        wr16(raw, 2, 0); // uid
+        wr16(raw, 2, 0);
         wr32(raw, INODE_OFF_ATIME, 0);
         wr32(raw, INODE_OFF_CTIME, 0);
         wr32(raw, INODE_OFF_MTIME, 0);
         wr32(raw, INODE_OFF_DTIME, 0);
-        wr16(raw, 24, 0); // gid
+        wr16(raw, 24, 0);
         wr16(raw, INODE_OFF_LINKS, links);
         wr32(raw, INODE_OFF_FLAGS, 0);
     }
@@ -817,7 +834,6 @@ impl Ext2 {
 
         self.write_block(new_blk, &z)?;
 
-        //dir_ptrs[blocks_used] = new_blk;
         Self::inode_set_block_ptr(&mut dir_raw, blocks_used, new_blk);
         let new_size = (blocks_used + 1) * bs;
         Self::inode_set_size(&mut dir_raw, new_size as u32);
@@ -923,10 +939,8 @@ impl Ext2 {
             }
         }
 
-        // create new inode
         let ino = self.alloc_inode_group0(false)?;
 
-        // initialize inode (regular file 0644)
         let mut raw = vec![0u8; self.inode_size as usize];
         Self::inode_init_common(&mut raw, 0x8000 | 0o644, 1);
         Self::inode_set_size(&mut raw, 0);
@@ -968,7 +982,6 @@ impl Ext2 {
 
         let mut raw = self.read_inode_mutable(ino)?;
 
-        // allocate blocks and write them
         let mut off = 0usize;
         for i in 0..need_blocks {
             let blk = self.alloc_block_group0()?;

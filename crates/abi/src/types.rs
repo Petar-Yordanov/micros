@@ -1,7 +1,5 @@
 #![allow(dead_code)]
 
-// TODO: Fix naming convention
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct FbInfo {
@@ -29,20 +27,72 @@ pub const ABI_IN_KIND_OTHER: u16 = 0xFFFF;
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ProcSpawnArgs {
-    pub pathPtr: u64,
-    pub pathLen: u64,
-    pub argvPtr: u64,
+    pub path_ptr: u64,
+    pub path_len: u64,
+    pub argv_ptr: u64,
     pub argc: u64,
     pub flags: u64,
 }
 
+#[repr(u32)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ProcStateAbi {
+    New = 0,
+    Running = 1,
+    Zombie = 2,
+}
+
 #[repr(C)]
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
+pub struct ProcListEntry {
+    pub pid: u32,
+    pub state: u32,
+    pub name_len: u32,
+    pub _pad: u32,
+    pub name: [u8; 32],
+}
+
+impl Default for ProcListEntry {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            state: 0,
+            name_len: 0,
+            _pad: 0,
+            name: [0; 32],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
 pub struct ProcInfo {
     pub pid: u32,
     pub state: u32,
-    pub namePtr: u64,
-    pub nameLen: u32,
+    pub main_tid: u64,
+    pub name_len: u32,
+    pub _pad: u32,
+    pub name: [u8; 32],
+}
+
+impl Default for ProcInfo {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            state: 0,
+            main_tid: 0,
+            name_len: 0,
+            _pad: 0,
+            name: [0; 32],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TimeSpec {
+    pub secs: u64,
+    pub nanos: u32,
     pub _pad: u32,
 }
 
@@ -56,44 +106,85 @@ pub struct VfsPath {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VfsReadArgs {
-    pub pathPtr: u64,
-    pub pathLen: u64,
+    pub path_ptr: u64,
+    pub path_len: u64,
     pub off: u64,
-    pub bufPtr: u64,
-    pub bufLen: u64,
+    pub buf_ptr: u64,
+    pub buf_len: u64,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VfsWriteArgs {
-    pub pathPtr: u64,
-    pub pathLen: u64,
+    pub path_ptr: u64,
+    pub path_len: u64,
     pub off: u64,
-    pub bufPtr: u64,
-    pub bufLen: u64,
+    pub buf_ptr: u64,
+    pub buf_len: u64,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct VfsListArgs {
-    pub pathPtr: u64,
-    pub pathLen: u64,
-    pub outPtr: u64,
-    pub outLen: u64,
+    pub path_ptr: u64,
+    pub path_len: u64,
+    pub out_ptr: u64,
+    pub out_len: u64,
 }
 
 #[repr(u32)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum VfsMountFs {
     Fat32 = 1,
-    Ext2  = 2,
+    Ext2 = 2,
 }
 
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct VfsMountArgs {
     pub fs: u32,
-    pub mountPtr: u64,
-    pub mountLen: u64,
-    pub baseOffBytes: u64,
+    pub mount_ptr: u64,
+    pub mount_len: u64,
+    pub base_off_bytes: u64,
+}
+
+// Channels (IPC)
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ChanCreateArgs {
+    pub flags: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ChanSendArgs {
+    pub chan_id: u64,
+    pub data_ptr: u64,
+    pub data_len: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ChanRecvArgs {
+    pub chan_id: u64,
+    pub out_ptr: u64,
+    pub out_cap: u64,
+}
+
+// Shared memory
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ShmCreateArgs {
+    pub size: u64,
+    pub flags: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct ShmMapArgs {
+    pub shm_id: u64,
+    pub desired_va: u64, // kernel chooses a deterministic VA
+    pub flags: u64,
 }

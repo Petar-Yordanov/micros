@@ -1,108 +1,11 @@
-extern crate alloc;
-
 use core::mem::size_of;
 use core::ptr::{read_volatile, write_bytes, write_volatile};
 use core::sync::atomic::{fence, Ordering::SeqCst};
- use crate::frame;
-use x86_64::{PhysAddr, VirtAddr};
 
-use crate::kernel::mm::map::mapper as page;
-use crate::kernel::mm::virt::vmarena;
+use crate::kernel::drivers::virtio::pci::VirtioPciCommonCfg;
 
-#[repr(C, packed)]
-pub struct VirtqDesc {
-    pub addr: u64,
-    pub len: u32,
-    pub flags: u16,
-    pub next: u16,
-}
-
-pub const VIRTQ_DESC_F_NEXT: u16 = 1;
-pub const VIRTQ_DESC_F_WRITE: u16 = 2;
-
-#[repr(C)]
-pub struct VirtqAvail {
-    pub flags: u16,
-    pub idx: u16,
-    pub ring: [u16; 0],
-}
-
-#[repr(C)]
-#[derive(Copy, Clone)]
-pub struct VirtqUsedElem {
-    pub id: u32,
-    pub len: u32,
-}
-
-#[repr(C)]
-pub struct VirtqUsed {
-    pub flags: u16,
-    pub idx: u16,
-    pub ring: [VirtqUsedElem; 0],
-}
-
-pub struct QueueMem {
-    pub va: VirtAddr,
-    pub pa: PhysAddr,
-    pub size: usize,
-}
-
-impl QueueMem {
-    pub fn alloc_pages(n_pages: usize) -> Self {
-        let va_base = vmarena::alloc_n(n_pages).expect("vq vmarena");
-        let first_pa = page::translate(va_base).expect("vq map");
-        Self {
-            va: va_base,
-            pa: first_pa,
-            size: n_pages * 4096,
-        }
-    }
-
-    pub fn alloc_pages_contig(n_pages: usize) -> Self {
-        assert!(n_pages >= 1);
-
-        let va_base = vmarena::alloc_n(n_pages).expect("vq vmarena");
-
-        for i in 0..n_pages {
-            let va = va_base + (i as u64) * 4096;
-            if let Ok(pf) = page::unmap(va) {
-                frame::free(pf);
-            }
-        }
-
-        'retry: loop {
-            let mut frames = alloc::vec::Vec::with_capacity(n_pages);
-
-            for _ in 0..n_pages {
-                let pf = frame::alloc().expect("vq frame alloc");
-                frames.push(pf);
-            }
-
-            let base = frames[0].start_address().as_u64();
-            for i in 1..n_pages {
-                let expect = base + (i as u64) * 4096;
-                if frames[i].start_address().as_u64() != expect {
-                    for pf in frames {
-                        frame::free(pf);
-                    }
-                    continue 'retry;
-                }
-            }
-
-            for (i, pf) in frames.iter().enumerate() {
-                let va = va_base + (i as u64) * 4096;
-                page::map_fixed(va, *pf, crate::kernel::mm::map::mapper::Prot::RW)
-                    .expect("vq map_fixed");
-            }
-
-            return Self {
-                va: va_base,
-                pa: PhysAddr::new(base),
-                size: n_pages * 4096,
-            };
-        }
-    }
-}
+use super::defs::{VirtqAvail, VirtqDesc, VirtqUsed, VirtqUsedElem};
+use super::mem::QueueMem;
 
 pub struct VirtQueue {
     pub qsz: u16,
@@ -111,7 +14,7 @@ pub struct VirtQueue {
     pub used: *mut VirtqUsed,
 
     next_free: u16,
-    last_used_idx: u16,
+    pub last_used_idx: u16,
 
     #[allow(dead_code)]
     mem: QueueMem,
@@ -125,7 +28,7 @@ unsafe impl Send for VirtQueue {}
 
 impl VirtQueue {
     pub fn new(
-        common: *mut super::pci::VirtioPciCommonCfg,
+        common: *mut VirtioPciCommonCfg,
         qsel: u16,
         qsz: u16,
         notify_base: *mut u8,
@@ -182,8 +85,16 @@ impl VirtQueue {
     }
 
     pub fn alloc_desc(&mut self) -> u16 {
+        if self.next_free >= self.qsz {
+            self.next_free = 0;
+        }
         let i = self.next_free;
-        self.next_free = (self.next_free + 1) % self.qsz;
+        self.next_free = self.next_free.wrapping_add(1);
+
+        if self.next_free == 0 {
+            crate::ksprintln!("[virtq] WARNING: descriptor allocation wrapped (no free list!)");
+        }
+
         i
     }
 

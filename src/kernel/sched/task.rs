@@ -1,6 +1,6 @@
 use crate::arch::x86_64::descriptors::tss;
 use crate::kernel::sched::proc as kproc;
-use crate::sprintln;
+use crate::ksprintln;
 
 use alloc::{boxed::Box, collections::VecDeque};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -12,6 +12,25 @@ pub type Pid = u64;
 
 extern "C" {
     fn switch_context(old: *mut u8, new: *const u8);
+}
+
+use crate::kernel::mm::map::mapper as page;
+use crate::kernel::mm::phys::frame;
+use crate::kernel::mm::virt::vmarena;
+
+const MIN_KSTACK_PAGES: usize = 16; // 64 KiB
+
+pub fn alloc_kstack_top(pages: usize) -> VirtAddr {
+    let pages = core::cmp::max(pages, MIN_KSTACK_PAGES);
+
+    let total = pages + 1;
+    let base = vmarena::alloc_n(total).expect("kstack vmarena alloc");
+
+    if let Ok(pf) = page::unmap(base) {
+        frame::free(pf);
+    }
+
+    base + ((total as u64) * 4096u64)
 }
 
 #[allow(dead_code)]
@@ -26,7 +45,7 @@ pub enum TaskState {
 }
 
 #[repr(C)]
-#[derive(Default)]
+#[derive(Default, Clone, Copy)]
 pub struct Context {
     pub rsp: u64,
     pub r15: u64,
@@ -37,6 +56,32 @@ pub struct Context {
     pub rbp: u64,
     pub rdi: u64,
     pub rip: u64,
+}
+
+#[repr(C)]
+#[derive(Default, Clone, Copy)]
+pub struct TrapFrame {
+    pub r15: u64,
+    pub r14: u64,
+    pub r13: u64,
+    pub r12: u64,
+    pub r11: u64,
+    pub r10: u64,
+    pub r9: u64,
+    pub r8: u64,
+    pub rsi: u64,
+    pub rdi: u64,
+    pub rbp: u64,
+    pub rdx: u64,
+    pub rcx: u64,
+    pub rbx: u64,
+    pub rax: u64,
+
+    pub rip: u64,
+    pub cs: u64,
+    pub rflags: u64,
+    pub user_rsp: u64,
+    pub user_ss: u64,
 }
 
 #[allow(dead_code)]
@@ -58,6 +103,9 @@ pub struct Task {
     pub ctx: Context,
     pub wake_jiffies: u64,
     pub timeslice: u32,
+
+    pub tf_valid: bool,
+    pub tf: TrapFrame,
 
     #[allow(dead_code)]
     pub name: &'static str,
@@ -87,6 +135,23 @@ static RUNQ: Mutex<VecDeque<TaskPtr>> = Mutex::new(VecDeque::new());
 static CURRENT: Mutex<TaskPtr> = Mutex::new(TaskPtr::new(core::ptr::null_mut()));
 static NEED_RESCHED: AtomicBool = AtomicBool::new(false);
 static IDLE: Mutex<TaskPtr> = Mutex::new(TaskPtr::new(core::ptr::null_mut()));
+
+static IN_SYSCALL: AtomicBool = AtomicBool::new(false);
+
+#[inline]
+pub fn syscall_enter() {
+    IN_SYSCALL.store(true, Ordering::Release);
+}
+
+#[inline]
+pub fn syscall_exit() {
+    IN_SYSCALL.store(false, Ordering::Release);
+}
+
+#[inline]
+pub fn in_syscall() -> bool {
+    IN_SYSCALL.load(Ordering::Acquire)
+}
 
 #[inline]
 fn idle_ptr() -> *mut Task {
@@ -187,10 +252,14 @@ pub fn spawn_kthread(
         },
         wake_jiffies: 0,
         timeslice: DEFAULT_SLICE,
+
+        tf_valid: false,
+        tf: TrapFrame::default(),
+
         name,
     });
 
-    sprintln!(
+    ksprintln!(
         "[task] spawn tid={} name={} kstack_top={:#x} saved_rsp={:#x}",
         tid,
         name,
@@ -203,13 +272,53 @@ pub fn spawn_kthread(
     raw
 }
 
+pub fn spawn_uthread(
+    name: &'static str,
+    pid: Pid,
+    kstack_top: VirtAddr,
+    initial_tf: TrapFrame,
+) -> *mut Task {
+    let tid = NEXT_TID.fetch_add(1, Ordering::Relaxed);
+
+    let t = Box::new(Task {
+        tid,
+        state: TaskState::Runnable,
+        kind: TaskKind::UThread { pid },
+        kstack_top,
+        ctx: Context::default(),
+        wake_jiffies: 0,
+        timeslice: DEFAULT_SLICE,
+
+        tf_valid: true,
+        tf: initial_tf,
+
+        name,
+    });
+
+    ksprintln!(
+        "[task] spawn tid={} name={} kstack_top={:#x} (uthread)",
+        tid,
+        name,
+        kstack_top.as_u64(),
+    );
+
+    let raw = Box::into_raw(t);
+    RUNQ.lock().push_back(TaskPtr::new(raw));
+    raw
+}
+
 #[inline]
 pub fn current_ptr() -> *mut Task {
     CURRENT.lock().get()
 }
 
-pub fn yield_now() {
+#[inline]
+pub fn request_resched() {
     NEED_RESCHED.store(true, Ordering::Release);
+}
+
+pub fn yield_now() {
+    request_resched();
     schedule();
 }
 
@@ -268,14 +377,95 @@ unsafe fn prepare_next_task_machine_state(next_ptr: *mut Task) {
             if let Some(p) = kproc::for_pid(pid) {
                 p.aspace.activate();
             } else {
-                sprintln!("[sched] warning: missing process for pid={} (UThread)", pid);
+                ksprintln!("[sched] warning: missing process for pid={} (UThread)", pid);
             }
             tss::set_rsp0_top((*next_ptr).kstack_top.as_u64());
+            //ksprintln!(
+            //    "[tss] rsp0 <- {:#x} (tid={})",
+            //    (*next_ptr).kstack_top.as_u64(),
+            //    (*next_ptr).tid
+            //);
         }
         TaskKind::KThread { .. } => {
             tss::set_rsp0_top((*next_ptr).kstack_top.as_u64());
+            //ksprintln!(
+            //    "[tss] rsp0 <- {:#x} (tid={})",
+            //    (*next_ptr).kstack_top.as_u64(),
+            //    (*next_ptr).tid
+            //);
         }
     }
+}
+
+pub unsafe fn preempt_from_timer(tf: &mut TrapFrame) -> *const TrapFrame {
+    if !INITED.load(Ordering::Acquire) {
+        return core::ptr::null();
+    }
+
+    if !NEED_RESCHED.load(Ordering::Acquire) {
+        return core::ptr::null();
+    }
+
+    if (tf.cs & 3) != 3 {
+        NEED_RESCHED.store(false, Ordering::Release);
+        return core::ptr::null();
+    }
+
+    let cur_ptr = CURRENT.lock().get();
+    if cur_ptr.is_null() {
+        NEED_RESCHED.store(false, Ordering::Release);
+        return core::ptr::null();
+    }
+
+    (*cur_ptr).tf = *tf;
+    (*cur_ptr).tf_valid = true;
+
+    if cur_ptr != idle_ptr() && (*cur_ptr).state == TaskState::Running {
+        (*cur_ptr).state = TaskState::Runnable;
+        RUNQ.lock().push_back(TaskPtr::new(cur_ptr));
+    }
+
+    let next_ptr = {
+        let mut runq = RUNQ.lock();
+        let len = runq.len();
+        let mut picked: *mut Task = core::ptr::null_mut();
+
+        for _ in 0..len {
+            if let Some(tp) = runq.pop_front() {
+                let t = tp.get();
+                if !t.is_null() && (*t).state == TaskState::Runnable {
+                    picked = t;
+                    break;
+                } else {
+                    runq.push_back(tp);
+                }
+            } else {
+                break;
+            }
+        }
+
+        if picked.is_null() { idle_ptr() } else { picked }
+    };
+
+    if next_ptr.is_null() || next_ptr == cur_ptr {
+        (*cur_ptr).state = TaskState::Running;
+        NEED_RESCHED.store(false, Ordering::Release);
+        return core::ptr::null();
+    }
+
+    if !(*next_ptr).tf_valid || ((*next_ptr).tf.cs & 3) != 3 {
+        (*cur_ptr).state = TaskState::Running;
+        NEED_RESCHED.store(false, Ordering::Release);
+        return core::ptr::null();
+    }
+
+    (*next_ptr).state = TaskState::Running;
+    prepare_next_task_machine_state(next_ptr);
+
+    *CURRENT.lock() = TaskPtr::new(next_ptr);
+    NEED_RESCHED.store(false, Ordering::Release);
+
+    &(*next_ptr).tf as *const TrapFrame
 }
 
 pub fn schedule() {
@@ -393,20 +583,15 @@ extern "C" fn kthread_exit(_: *mut u8) -> ! {
     }
 }
 
-#[inline]
-pub fn preempt_needed() -> bool {
-    NEED_RESCHED.load(Ordering::Acquire)
-}
-
 #[allow(dead_code)]
 impl Task {
     pub fn check_stack_bounds(&self) {
         let top = self.kstack_top.as_u64();
-        let bottom = top - (2 * 4096);
+        let bottom = top - ((MIN_KSTACK_PAGES as u64) * 4096);
 
         let rsp = self.ctx.rsp;
         if rsp < bottom || rsp > top {
-            sprintln!(
+            ksprintln!(
                 "[stack-check][tid={}] RSP out of range: rsp={:#x}, [{:#x}..{:#x})",
                 self.tid,
                 rsp,

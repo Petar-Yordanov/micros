@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 extern crate alloc;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -9,7 +10,7 @@ use x86_64::VirtAddr;
 
 use crate::kernel::mm::aspace::address_space::{new_user_address_space, AddressSpace};
 use crate::kernel::sched::task::{self, current_ptr, TaskKind};
-use crate::sprintln;
+use crate::ksprintln;
 
 pub type Pid = task::Pid;
 
@@ -44,7 +45,7 @@ pub struct Process {
     pub kstack_top: VirtAddr,
     pub main_task: TaskHandle,
     pub state: ProcState,
-    pub name: &'static str,
+    pub name: String,
 }
 
 static NEXT_PID: AtomicU64 = AtomicU64::new(1);
@@ -87,11 +88,11 @@ pub fn create_kernel_backed_process(
             kstack_top,
             main_task: TaskHandle::new(task_ptr),
             state: ProcState::Running,
-            name,
+            name: String::from(name),
         });
     }
 
-    sprintln!("[proc] created process pid={}", pid);
+    ksprintln!("[proc] created process pid={}", pid);
     pid
 }
 

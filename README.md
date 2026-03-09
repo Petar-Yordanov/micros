@@ -214,12 +214,61 @@ make run FS=ext2
 
 ### Userspace
 
-- [ ] **Syscalls**
-- [ ] **ELF loader**
-- [ ] **Shell**
-- [ ] **Basic apps**
-- [ ] **Device files** (`/dev`, `/proc`, etc.)
-- [ ] **GUI stack** (compositor/windowing + UI apps)
+- [x] **Bootstrap / Execution**
+  - [x] `/bin/init.elf`
+  - [x] Root mount + `exec("/bin/wm.elf")`
+  - [x] User ELF loading
+  - [x] Userspace runtime (`rlibc`, ABI, heap, panic handlers)
+
+- [x] **Syscall layer**
+  - [x] Logging
+  - [x] Framebuffer
+  - [x] Input
+  - [x] Yield / exec / process
+  - [x] VFS
+  - [x] Time/date syscall support
+
+- [x] **Shell / Apps**
+  - [x] File explorer
+  - [x] Task manager
+  - [x] Clock
+  - [x] Notepad
+
+- [ ] **GUI stack**
+  - [x] Single-process UI model
+  - [x] WM + `libui` + apps in one address space
+  - [x] Full redraw framebuffer renderer
+  - [x] Userspace input parsing / dispatch
+  - [x] Basic windows and embedded apps
+  - [x] Taskbar / start menu / app launching
+    - [x] Shutdown mechanism
+    - [x] Apps dropdown
+  - [x] Window drag / close / minimize / maximize
+  - [x] Desktop icons
+  - [x] Placeholder clock / date
+  - [x] `.ico` icon loading
+  - [x] ICO decode support (32-bit BGRA, 24-bit + AND mask)
+  - [x] Widgets
+    - [x] Windows
+    - [x] Titlebars
+    - [x] Buttons
+    - [x] Labels / text
+    - [x] Desktop icons
+    - [x] Taskbar / start menu style clickable items
+    - [x] Mouse hover / pressed states
+    - [x] Event handling
+    - [x] Icon rendering
+    - [x] Panels / containers
+    - [x] List view
+    - [x] Table view
+    - [x] Tree view
+    - [x] Text fields
+    - [x] Text area / console view
+    - [x] Scrolling
+    - [x] Menu items / submenu actions
+  - [x] Better styling
+  - [ ] Separate app processes
+  - [ ] Multi-process GUI architecture (comm via IPC)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

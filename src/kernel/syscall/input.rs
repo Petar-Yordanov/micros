@@ -1,64 +1,58 @@
 extern crate alloc;
 
-use core::mem;
-
 use micros_abi::errno;
+use micros_abi::types::AbiInputEvent;
 
+use crate::kernel::drivers::virtio::input::InputMsg;
 use crate::kernel::mm::aspace::user_copy::copy_to_user;
-use micros_abi::types::{
-    AbiInputEvent, ABI_IN_KIND_KEY, ABI_IN_KIND_OTHER, ABI_IN_KIND_REL, ABI_IN_KIND_SYN,
-};
 
 pub(super) fn sys_input_next_event(user_out_ptr: u64) -> i64 {
     if user_out_ptr == 0 {
         return -errno::EFAULT;
     }
 
-    let msg = match crate::kernel::drivers::virtio::input::poll_msg() {
-        Some(m) => m,
-        None => return -errno::EAGAIN,
+    let Some(msg) = crate::kernel::drivers::virtio::input::poll_msg() else {
+        return -errno::EAGAIN;
     };
 
-    crate::sprintln!("[syscall] SYS_INPUT_NEXT_EVENT got msg={:?}", msg);
-
-    let ev: AbiInputEvent = match msg {
-        crate::kernel::drivers::virtio::input::InputMsg::Key {
-            code,
-            pressed,
-            repeat,
-        } => AbiInputEvent {
-            kind: ABI_IN_KIND_KEY,
-            code,
-            value: if repeat { 2 } else if pressed { 1 } else { 0 },
-        },
-
-        crate::kernel::drivers::virtio::input::InputMsg::Rel { code, value } => AbiInputEvent {
-            kind: ABI_IN_KIND_REL,
-            code,
-            value,
-        },
-
-        crate::kernel::drivers::virtio::input::InputMsg::Syn => AbiInputEvent {
-            kind: ABI_IN_KIND_SYN,
-            code: 0,
-            value: 0,
-        },
-
-        crate::kernel::drivers::virtio::input::InputMsg::Other { etype, code, value } => {
-            let packed = ((etype & 0x00FF) << 8) | (code & 0x00FF);
-            AbiInputEvent {
-                kind: ABI_IN_KIND_OTHER,
-                code: packed,
-                value,
-            }
+    let (etype_u16, code_u16, value_i32): (u16, u16, i32) = match msg {
+        InputMsg::Syn => (0x00, 0, 0),
+        InputMsg::Key { code, pressed, repeat } => {
+            let v = if repeat { 2 } else if pressed { 1 } else { 0 };
+            (0x01, code, v)
         }
+        InputMsg::Rel { code, value } => (0x02, code, value),
+        InputMsg::Other { etype, code, value } => (etype, code, value),
     };
+
+    if core::mem::size_of::<AbiInputEvent>() < 8 {
+        return -errno::EINVAL;
+    }
+
+    let mut out: AbiInputEvent = unsafe { core::mem::zeroed() };
+    unsafe {
+        let p = (&mut out as *mut AbiInputEvent) as *mut u8;
+
+        let et = etype_u16.to_le_bytes();
+        core::ptr::write(p.add(0), et[0]);
+        core::ptr::write(p.add(1), et[1]);
+
+        let co = code_u16.to_le_bytes();
+        core::ptr::write(p.add(2), co[0]);
+        core::ptr::write(p.add(3), co[1]);
+
+        let va = value_i32.to_le_bytes();
+        core::ptr::write(p.add(4), va[0]);
+        core::ptr::write(p.add(5), va[1]);
+        core::ptr::write(p.add(6), va[2]);
+        core::ptr::write(p.add(7), va[3]);
+    }
 
     unsafe {
         if copy_to_user(
             user_out_ptr as *mut u8,
-            &ev as *const _ as *const u8,
-            mem::size_of::<AbiInputEvent>(),
+            (&out as *const AbiInputEvent) as *const u8,
+            core::mem::size_of::<AbiInputEvent>(),
         )
         .is_err()
         {

@@ -1,0 +1,8 @@
+[package]
+name = "ipc_cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rlibc = { path = "../../rlibc" }
+micros-abi = { workspace = true }

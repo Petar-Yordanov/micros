@@ -7,7 +7,10 @@ pub mod syscall {
     pub mod proc;
     pub mod util;
     pub mod vfs;
-
+    pub mod time;
+    pub mod chan;
+    pub mod shm;
+    pub mod power;
     pub use dispatch::dispatch;
 }
 
@@ -44,6 +47,7 @@ pub mod sched {
     pub mod proc;
     pub mod switch_context;
     pub mod task;
+    pub mod kstack;
 }
 
 pub mod fs {
@@ -67,21 +71,53 @@ pub mod drivers {
     pub mod virtio {
         pub mod blk;
         pub mod input;
-        pub mod pci;
-        pub mod virtqueue;
-    }
-}
 
-pub mod input {
-    pub mod events;
-    pub mod parser;
+        pub mod pci {
+            pub mod caps;
+            pub mod init;
+            pub mod transport;
+
+            pub use caps::VirtioPciCommonCfg;
+            pub(crate) use caps::VirtioPciRegs;
+            pub use init::init;
+            pub use transport::{
+                devcfg_read_le32, devcfg_read_le64, negotiate_features, setup_queue, STATUS_DRIVER_OK,
+            };
+        }
+
+        pub mod virtqueue {
+            pub mod defs;
+            pub mod mem;
+            pub mod queue;
+
+            pub use defs::{VIRTQ_DESC_F_NEXT, VIRTQ_DESC_F_WRITE};
+            pub use queue::VirtQueue;
+        }
+    }
 }
 
 pub mod exec {
     pub mod init;
     pub mod elf;
-    pub mod path;
     pub mod exec_impl;
 
     pub use exec_impl::*;
 }
+
+pub mod bootlog {
+    mod state;
+    mod console;
+    mod render;
+    mod tags;
+
+    pub use state::{
+        boot_progress_step,
+        bootlog_fb_disable,
+        bootlog_fb_enable,
+        bootlog_push_line,
+        bootlog_set_progress_total,
+        try_init,
+    };
+}
+pub mod boot;
+pub mod selftest;

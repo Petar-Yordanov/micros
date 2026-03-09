@@ -1,15 +1,10 @@
-extern crate alloc;
-
 use core::ptr::read_volatile;
-use core::sync::atomic::{fence, Ordering::SeqCst};
 
 use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel::drivers::pci::cfg_io;
 use crate::kernel::mm::map::mapper::{self as page, Prot};
-use crate::sprintln;
-
-use super::virtqueue::VirtQueue;
+use crate::ksprintln;
 
 const PCI_VENDOR_VIRTIO: u16 = 0x1AF4;
 const PCI_CAP_PTR: u8 = 0x34;
@@ -23,32 +18,6 @@ const VIRTIO_PCI_CAP_COMMON_CFG: u8 = 1;
 const VIRTIO_PCI_CAP_NOTIFY_CFG: u8 = 2;
 const VIRTIO_PCI_CAP_ISR_CFG: u8 = 3;
 const VIRTIO_PCI_CAP_DEVICE_CFG: u8 = 4;
-
-const VIRTIO_F_VERSION_1: u64 = 1 << 32;
-
-const STATUS_ACKNOWLEDGE: u8 = 1;
-const STATUS_DRIVER: u8 = 2;
-pub const STATUS_DRIVER_OK: u8 = 4;
-const STATUS_FEATURES_OK: u8 = 8;
-const STATUS_FAILED: u8 = 0x80;
-
-//#[repr(C, packed)]
-//struct VirtioPciCap {
-//    cap_vndr: u8,
-//    cap_next: u8,
-//    cap_len: u8,
-//    cfg_type: u8,
-//    bar: u8,
-//    id: u8,
-//    offset: u32,
-//    length: u32,
-//}
-
-//#[repr(C, packed)]
-//struct VirtioPciNotifyCap {
-//    cap: VirtioPciCap,
-//    notify_off_multiplier: u32,
-//}
 
 #[repr(C, packed)]
 pub struct VirtioPciCommonCfg {
@@ -171,7 +140,7 @@ fn map_all_bars(bus: u8, dev: u8, func: u8, regs: &mut VirtioPciRegs) {
 
         if pa != 0 {
             if let Some(m) = BarMapping::map_mmio(pa, MAP_LEN, va_hint, i) {
-                sprintln!(
+                ksprintln!(
                     "[virtio-pci][map] {:02x}:{:02x}.{} BAR{} phys={:#x} va={:#x} len={:#x} {}",
                     bus,
                     dev,
@@ -197,7 +166,7 @@ fn map_bar_direct(regs: &VirtioPciRegs, bar_idx: usize, off: u32, len: u32) -> O
     let m = regs.bar_map[bar_idx]?;
     let end = (off as u64).saturating_add(len as u64);
     if end > m.len {
-        sprintln!(
+        ksprintln!(
             "[virtio-pci][WARN] cap exceeds mapped BAR window: bar{} off={:#x} len={:#x} > map_len={:#x}",
             bar_idx, off, len, m.len
         );
@@ -206,7 +175,7 @@ fn map_bar_direct(regs: &VirtioPciRegs, bar_idx: usize, off: u32, len: u32) -> O
     Some((m.va.as_u64() + off as u64) as *mut u8)
 }
 
-fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
+pub(crate) fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
     let vendor = cfg_io::read_u16(bus, dev, func, 0x00);
     if vendor != PCI_VENDOR_VIRTIO {
         return None;
@@ -240,7 +209,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                 match cfg_type {
                     VIRTIO_PCI_CAP_COMMON_CFG => {
                         regs.common = base as *mut VirtioPciCommonCfg;
-                        sprintln!(
+                        ksprintln!(
                             "[virtio-pci][cap] COMMON bar={} off={:#x} len={:#x} -> {:p}",
                             bar_idx,
                             offset,
@@ -256,7 +225,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                         };
                         regs.notify = base;
                         regs.notify_mul = mul;
-                        sprintln!(
+                        ksprintln!(
                             "[virtio-pci][cap] NOTIFY bar={} off={:#x} len={:#x} mul={} -> {:p}",
                             bar_idx,
                             offset,
@@ -267,7 +236,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                     }
                     VIRTIO_PCI_CAP_ISR_CFG => {
                         regs.isr = base;
-                        sprintln!(
+                        ksprintln!(
                             "[virtio-pci][cap] ISR bar={} off={:#x} len={:#x} -> {:p}",
                             bar_idx,
                             offset,
@@ -278,7 +247,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                     VIRTIO_PCI_CAP_DEVICE_CFG => {
                         regs.device = base;
                         regs.device_len = length;
-                        sprintln!(
+                        ksprintln!(
                             "[virtio-pci][cap] DEVICE bar={} off={:#x} len={:#x} -> {:p}",
                             bar_idx,
                             offset,
@@ -287,7 +256,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                         );
                     }
                     _ => {
-                        sprintln!(
+                        ksprintln!(
                             "[virtio-pci][cap] OTHER cfg_type={} bar={} off={:#x} len={:#x} -> {:p}",
                             cfg_type,
                             bar_idx,
@@ -298,7 +267,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
                     }
                 }
             } else {
-                sprintln!(
+                ksprintln!(
                     "[virtio-pci][cap] SKIP cfg_type={} bar={} off={:#x} len={:#x} (out of range)",
                     cfg_type,
                     bar_idx,
@@ -315,7 +284,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
     }
 
     let did = cfg_io::read_u16(bus, dev, func, 0x02);
-    sprintln!(
+    ksprintln!(
         "[virtio-pci] {:02x}:{:02x}.{} ven={:04x} dev={:04x}",
         bus,
         dev,
@@ -342,7 +311,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
     };
 
     if regs.common.is_null() || regs.notify.is_null() {
-        sprintln!(
+        ksprintln!(
             "[virtio-pci][ERR] missing required caps: common={:p} notify={:p}",
             regs.common,
             regs.notify
@@ -353,7 +322,7 @@ fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<VirtioPciRegs> {
     Some(regs)
 }
 
-fn enable_pci_function(bus: u8, dev: u8, func: u8) {
+pub(crate) fn enable_pci_function(bus: u8, dev: u8, func: u8) {
     let cmd = cfg_io::read_u16(bus, dev, func, 0x04);
     let new_cmd = cmd | 0x0002 | 0x0004;
     if new_cmd != cmd {
@@ -363,7 +332,7 @@ fn enable_pci_function(bus: u8, dev: u8, func: u8) {
     let mem = (chk & 0x2) != 0;
     let bm = (chk & 0x4) != 0;
 
-    sprintln!(
+    ksprintln!(
         "[pci] enable {:02x}:{:02x}.{} cmd={:#x} -> mem={} busmaster={}",
         bus,
         dev,
@@ -372,148 +341,4 @@ fn enable_pci_function(bus: u8, dev: u8, func: u8) {
         mem,
         bm
     );
-}
-
-fn reset_device(common: *mut VirtioPciCommonCfg) {
-    unsafe {
-        (*common).device_status = 0;
-        fence(SeqCst);
-    }
-}
-
-fn set_status(common: *mut VirtioPciCommonCfg, bits: u8) {
-    unsafe {
-        (*common).device_status |= bits;
-        fence(SeqCst);
-    }
-}
-
-fn features_ok(common: *mut VirtioPciCommonCfg) -> bool {
-    unsafe {
-        (*common).device_status |= STATUS_FEATURES_OK;
-        fence(SeqCst);
-        ((*common).device_status & STATUS_FEATURES_OK) != 0
-    }
-}
-
-pub fn negotiate_features(common: *mut VirtioPciCommonCfg) -> bool {
-    unsafe {
-        reset_device(common);
-        set_status(common, STATUS_ACKNOWLEDGE);
-        set_status(common, STATUS_DRIVER);
-
-        (*common).device_feature_select = 0;
-        let f0 = (*common).device_feature as u64;
-        (*common).device_feature_select = 1;
-        let f1 = (*common).device_feature as u64;
-        let feats = f0 | (f1 << 32);
-
-        sprintln!(
-            "[virtio-pci][feat] device f0={:#x} f1={:#x} all={:#x}",
-            f0,
-            f1,
-            feats
-        );
-
-        let mut accept: u64 = 0;
-        if (feats & VIRTIO_F_VERSION_1) != 0 {
-            accept |= VIRTIO_F_VERSION_1;
-        }
-
-        (*common).driver_feature_select = 0;
-        (*common).driver_feature = (accept & 0xFFFF_FFFF) as u32;
-        (*common).driver_feature_select = 1;
-        (*common).driver_feature = (accept >> 32) as u32;
-
-        if !features_ok(common) {
-            let st = (*common).device_status;
-            sprintln!(
-                "[virtio-pci][ERR] FEATURES_OK rejected; status={:#x} device_feat={:#x} accept={:#x}",
-                st, feats, accept
-            );
-            (*common).device_status = STATUS_FAILED;
-            return false;
-        }
-
-        sprintln!(
-            "[virtio-pci][feat] FEATURES_OK accepted; status={:#x}",
-            (*common).device_status
-        );
-        true
-    }
-}
-
-pub fn setup_queue(
-    common: *mut VirtioPciCommonCfg,
-    notify_base: *mut u8,
-    notify_mul: u32,
-    qsel: u16,
-) -> Option<VirtQueue> {
-    unsafe {
-        (*common).queue_select = qsel;
-        let max = (*common).queue_size;
-        if max == 0 {
-            return None;
-        }
-        let qsz = if max > 256 { 256 } else { max };
-        Some(VirtQueue::new(common, qsel, qsz, notify_base, notify_mul))
-    }
-}
-
-pub fn devcfg_read_le32(base: *const u8, off: usize) -> u32 {
-    unsafe {
-        let p = base.add(off) as *const u32;
-        u32::from_le(core::ptr::read_volatile(p))
-    }
-}
-
-pub fn devcfg_read_le64(base: *const u8, off: usize) -> u64 {
-    unsafe {
-        let p = base.add(off) as *const u64;
-        u64::from_le(core::ptr::read_volatile(p))
-    }
-}
-
-pub fn init() {
-    let mut got_blk = false;
-
-    super::blk::ensure_globals();
-    super::input::ensure_globals();
-
-    for bus in 0u8..=255 {
-        for dev in 0u8..32 {
-            for func in 0u8..8 {
-                let vendor = cfg_io::read_u16(bus, dev, func, 0x00);
-                if vendor == 0xFFFF || vendor != PCI_VENDOR_VIRTIO {
-                    continue;
-                }
-
-                enable_pci_function(bus, dev, func);
-
-                if let Some(regs) = parse_caps_for_device(bus, dev, func) {
-                    match regs.kind {
-                        VirtioDevKind::Blk if !got_blk => {
-                            if super::blk::try_attach(regs) {
-                                sprintln!("[virtio-pci] blk ready");
-                                got_blk = true;
-                            }
-                        }
-                        VirtioDevKind::Input => {
-                            if super::input::try_attach(regs) {
-                                sprintln!("[virtio-pci] input ready");
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-    }
-
-    if !got_blk {
-        sprintln!("[virtio-pci] WARN: no blk found");
-    }
-    if super::input::count_devices() == 0 {
-        sprintln!("[virtio-pci] WARN: no input found");
-    }
 }

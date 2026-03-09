@@ -118,12 +118,12 @@ fn vendor_from_bytes(s: &[u8; 12]) -> CpuVendor {
 
 #[inline(always)]
 fn cpuid(leaf: u32) -> core::arch::x86_64::CpuidResult {
-    unsafe { __cpuid(leaf) }
+    __cpuid(leaf)
 }
 
 #[inline(always)]
 fn cpuidc(leaf: u32, sub: u32) -> core::arch::x86_64::CpuidResult {
-    unsafe { __cpuid_count(leaf, sub) }
+    __cpuid_count(leaf, sub)
 }
 
 #[inline(always)]
@@ -433,14 +433,12 @@ fn decode_family_model(eax: u32) -> (u16, u16, u8) {
     let ext_model = ((eax >> 16) & 0xF) as u16;
     let ext_family = ((eax >> 20) & 0xFF) as u16;
 
-    // Effective family
     let family_eff = if family_lo == 0xF {
         family_lo + ext_family
     } else {
         family_lo
     };
 
-    // Effective model
     let model_eff = if family_lo == 0x6 || family_lo == 0xF {
         (ext_model << 4) | model_lo
     } else {
@@ -456,12 +454,10 @@ fn logical_count_from_leaf1_or(fallback: u32) -> u32 {
     let lcount = (l1.ebx >> 16) & 0xff;
     if lcount != 0 {
         lcount
+    } else if fallback != 0 {
+        fallback
     } else {
-        if fallback != 0 {
-            fallback
-        } else {
-            1
-        }
+        1
     }
 }
 

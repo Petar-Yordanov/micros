@@ -9,7 +9,7 @@ use core::cmp::Ordering;
 
 use crate::kernel::fs::ext2::Ext2;
 use crate::kernel::fs::fat32::Fat32;
-use crate::sprintln;
+use crate::ksprintln;
 
 use super::error::VfsError;
 use super::path::{normalize_mountpoint, normalize_path, strip_mount_prefix};
@@ -134,7 +134,7 @@ pub fn mount_fat32(mountpoint: &str, base_off_bytes: u64) -> Result<(), VfsError
 
     if let Some(slot) = tbl.iter_mut().find(|m| m.mp == mp) {
         slot.fs = FsKind::Fat32(fs);
-        sprintln!("[vfs] remounted FAT32 at {}", mp);
+        ksprintln!("[vfs] remounted FAT32 at {}", mp);
         return Ok(());
     }
 
@@ -144,7 +144,7 @@ pub fn mount_fat32(mountpoint: &str, base_off_bytes: u64) -> Result<(), VfsError
     });
 
     tbl.sort_unstable_by(|a, b| b.mp.len().cmp(&a.mp.len()));
-    sprintln!("[vfs] mounted FAT32 at {}", mp);
+    ksprintln!("[vfs] mounted FAT32 at {}", mp);
     Ok(())
 }
 
@@ -155,7 +155,7 @@ pub fn mount_ext2(mountpoint: &str, base_off_bytes: u64) -> Result<(), VfsError>
 
     if let Some(slot) = tbl.iter_mut().find(|m| m.mp == mp) {
         slot.fs = FsKind::Ext2(fs);
-        sprintln!("[vfs] remounted ext2 at {}", mp);
+        ksprintln!("[vfs] remounted ext2 at {}", mp);
         return Ok(());
     }
 
@@ -165,7 +165,7 @@ pub fn mount_ext2(mountpoint: &str, base_off_bytes: u64) -> Result<(), VfsError>
     });
 
     tbl.sort_unstable_by(|a, b| b.mp.len().cmp(&a.mp.len()));
-    sprintln!("[vfs] mounted ext2 at {}", mp);
+    ksprintln!("[vfs] mounted ext2 at {}", mp);
     Ok(())
 }
 
@@ -193,13 +193,13 @@ pub(crate) fn resolve<'a>(
 pub fn mount_root_auto() -> Result<(), VfsError> {
     match mount_fat32("/", 0) {
         Ok(()) => {
-            sprintln!("[vfs] mounted / (FAT32)");
+            ksprintln!("[vfs] mounted / (FAT32)");
             Ok(())
         }
         Err(e_fat) => {
-            sprintln!("[vfs] FAT32 mount failed: {:?} (trying ext2)", e_fat);
+            ksprintln!("[vfs] FAT32 mount failed: {:?} (trying ext2)", e_fat);
             mount_ext2("/", 0)?;
-            sprintln!("[vfs] mounted / (ext2)");
+            ksprintln!("[vfs] mounted / (ext2)");
             Ok(())
         }
     }

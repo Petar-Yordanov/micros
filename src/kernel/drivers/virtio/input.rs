@@ -107,7 +107,6 @@ impl VirtioInput {
         }
 
         unsafe {
-            // RawInputEvent is `packed`, so buffer may be unaligned.
             let ev = core::ptr::read_unaligned(buf_va.as_ptr::<RawInputEvent>());
             let msg = match ev.etype {
                 0x01 => InputMsg::Key {
@@ -197,9 +196,9 @@ pub fn drain_log(max_events: usize) {
         match msg {
             InputMsg::Key { code, pressed, .. } => {
                 if pressed {
-                    crate::sprintln!("[raw] key code={}", code);
+                    crate::ksprintln!("[raw] key code={}", code);
                 }
-                crate::sprintln!(
+                crate::ksprintln!(
                     "[input] key code={} {}",
                     code,
                     if pressed { "down" } else { "up" }
@@ -207,13 +206,13 @@ pub fn drain_log(max_events: usize) {
             }
 
             InputMsg::Rel { code, value } => {
-                crate::sprintln!("[input] rel code={} value={}", code, value);
+                crate::ksprintln!("[input] rel code={} value={}", code, value);
             }
 
-            InputMsg::Syn => crate::sprintln!("[input] syn"),
+            InputMsg::Syn => crate::ksprintln!("[input] syn"),
 
             InputMsg::Other { etype, code, value } => {
-                crate::sprintln!(
+                crate::ksprintln!(
                     "[input] other type={:#x} code={:#x} value={}",
                     etype,
                     code,
