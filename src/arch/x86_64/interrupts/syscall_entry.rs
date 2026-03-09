@@ -17,7 +17,14 @@ extern "C" fn syscall_dispatch_rust(
     if n < 30 {
         crate::ksprintln!(
             "[syscall] #{} nr={} a0={:#x} a1={:#x} a2={:#x} a3={:#x} a4={:#x} a5={:#x}",
-            n, nr, a0, a1, a2, a3, a4, a5
+            n,
+            nr,
+            a0,
+            a1,
+            a2,
+            a3,
+            a4,
+            a5
         );
     }
     kdispatch::dispatch(nr, a0, a1, a2, a3, a4, a5)

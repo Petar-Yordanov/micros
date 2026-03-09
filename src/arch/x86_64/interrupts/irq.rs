@@ -49,7 +49,9 @@ pub extern "x86-interrupt" fn spurious_irq(_sf: InterruptStackFrame) {
 
 #[inline(always)]
 extern "C" fn apic_eoi_rust() {
-    unsafe { apic::eoi(); }
+    unsafe {
+        apic::eoi();
+    }
 }
 
 #[inline(never)]

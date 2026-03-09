@@ -1,8 +1,8 @@
 use micros_abi::types::{AbiInputEvent, ABI_IN_KIND_KEY, ABI_IN_KIND_REL, ABI_IN_KIND_SYN};
 use rlibc::input::next_event;
 
-pub use crate::keymap::{Key, MouseButton};
 use crate::keymap::{key_from_evdev, mouse_button_from_evdev};
+pub use crate::keymap::{Key, MouseButton};
 
 const EAGAIN: i64 = -11;
 

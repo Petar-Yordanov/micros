@@ -4,9 +4,9 @@ extern crate alloc;
 
 use alloc::vec;
 
-use x86_64::PhysAddr;
 use crate::Prot;
 use spin::{Mutex, Once};
+use x86_64::PhysAddr;
 use x86_64::VirtAddr;
 
 use crate::kernel::mm::map::mapper as page;
@@ -56,7 +56,11 @@ impl VirtioBlk {
             core::ptr::write(
                 hdr_va.as_mut_ptr::<VirtioBlkReqHdr>(),
                 VirtioBlkReqHdr {
-                    req_type: if is_read { VIRTIO_BLK_T_IN } else { VIRTIO_BLK_T_OUT },
+                    req_type: if is_read {
+                        VIRTIO_BLK_T_IN
+                    } else {
+                        VIRTIO_BLK_T_OUT
+                    },
                     _reserved: 0,
                     sector: sector512,
                 },
@@ -118,7 +122,9 @@ impl VirtioBlk {
                     if st != 0 {
                         ksprintln!(
                             "[virtio-blk][xfer] used.id={} len={} status={} (FAIL)",
-                            u.id, u.len, st
+                            u.id,
+                            u.len,
+                            st
                         );
                     }
                     return st == 0;
@@ -146,10 +152,7 @@ impl VirtioBlk {
         }
     }
 
-    fn dma_prepare_buffer(
-        data: *mut u8,
-        len: usize,
-    ) -> (VirtAddr, PhysAddr, usize, u64, bool) {
+    fn dma_prepare_buffer(data: *mut u8, len: usize) -> (VirtAddr, PhysAddr, usize, u64, bool) {
         use crate::kernel::mm::phys::frame;
 
         let start_va_u64 = data as u64;
@@ -181,9 +184,9 @@ impl VirtioBlk {
             cur_va += 4096;
         }
 
-        if let Some(first_pa_page) = last_pa_page.map(|_| {
-            page::translate(VirtAddr::new(start_page)).unwrap().as_u64() & !0xfff
-        }) {
+        if let Some(first_pa_page) = last_pa_page
+            .map(|_| page::translate(VirtAddr::new(start_page)).unwrap().as_u64() & !0xfff)
+        {
             let base_pa = PhysAddr::new(first_pa_page);
             return (VirtAddr::new(0), base_pa, 0, off_in_page, false);
         }
@@ -220,13 +223,7 @@ impl VirtioBlk {
                 page::map_fixed(va, *pf, Prot::RW).expect("blk dma map_fixed");
             }
 
-            return (
-                dma_va_base,
-                PhysAddr::new(base),
-                pages,
-                off_in_page,
-                true,
-            );
+            return (dma_va_base, PhysAddr::new(base), pages, off_in_page, true);
         }
     }
 
@@ -339,7 +336,10 @@ pub fn read_at(off: u64, buf: &mut [u8]) -> bool {
 pub fn write_at(off: u64, buf: &[u8]) -> bool {
     if let Some(m) = BLK_DEV.get() {
         let mut guard = m.lock();
-        guard.as_mut().map(|b| b.write_at(off, buf)).unwrap_or(false)
+        guard
+            .as_mut()
+            .map(|b| b.write_at(off, buf))
+            .unwrap_or(false)
     } else {
         false
     }

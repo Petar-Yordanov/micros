@@ -1,6 +1,6 @@
+use crate::syscall::syscall1;
 use micros_abi::sysnr;
 use micros_abi::types::AbiInputEvent;
-use crate::syscall::syscall1;
 
 #[inline(always)]
 pub fn next_event(out: &mut AbiInputEvent) -> i64 {

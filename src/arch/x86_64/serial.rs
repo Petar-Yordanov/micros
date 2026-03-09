@@ -1,6 +1,6 @@
+use crate::bootlog::bootlog_push_line;
 use core::fmt::{self, Write};
 use x86_64::instructions::port::Port;
-use crate::bootlog::bootlog_push_line;
 const COM1: u16 = 0x3F8;
 const KERNEL_LINE_BUF: usize = 256;
 

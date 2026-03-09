@@ -58,7 +58,9 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
     let ap = b"APPEND!";
     vfs_write("/TestDir/Sub/Note.txt", ap)?;
     match vfs_read("/TestDir/Sub/Note.txt") {
-        Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => ksprintln!("[vfs] ext2 append OK"),
+        Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => {
+            ksprintln!("[vfs] ext2 append OK")
+        }
         Ok(_) => return Err(VfsError::FsSpecific),
         Err(e) => return Err(e),
     }

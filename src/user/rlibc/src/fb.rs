@@ -1,6 +1,6 @@
+use crate::syscall::{syscall0, syscall1};
 use micros_abi::sysnr;
 use micros_abi::types::FbInfo;
-use crate::syscall::{syscall0, syscall1};
 
 #[inline(always)]
 pub fn fb_info(out: &mut FbInfo) -> i64 {

@@ -414,9 +414,18 @@ impl App for TaskManagerApp {
         let status_rect = Self::status_rect_local().translate(client_rect.x, client_rect.y);
 
         let cols = [
-            TableColumn { title: "PID", width: 64 },
-            TableColumn { title: "State", width: 110 },
-            TableColumn { title: "Name", width: 414 },
+            TableColumn {
+                title: "PID",
+                width: 64,
+            },
+            TableColumn {
+                title: "State",
+                width: 110,
+            },
+            TableColumn {
+                title: "Name",
+                width: 414,
+            },
         ];
 
         let mut cell_rows: Vec<[&str; 3]> = Vec::with_capacity(self.rows.len());

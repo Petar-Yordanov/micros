@@ -1,10 +1,10 @@
-use font8x8::{BASIC_FONTS, UnicodeFonts};
+use font8x8::{UnicodeFonts, BASIC_FONTS};
 use libui::canvas::Canvas;
 use libui::color::{
-    BG, BUTTON_BORDER, CURSOR_BORDER, CURSOR_FILL, PANEL_TEXT, START_BOTTOM, START_TEXT,
-    START_TOP, TASKBAR_BOTTOM, TASKBAR_EDGE_BOTTOM, TASKBAR_EDGE_TOP, TASKBAR_TOP, TEXT,
-    TITLEBAR_ACTIVE_BOTTOM, TITLEBAR_ACTIVE_TOP, TITLEBAR_INACTIVE_BOTTOM,
-    TITLEBAR_INACTIVE_TOP, WHITE, WINDOW_BG, WINDOW_BORDER, WINDOW_BORDER_INNER,
+    BG, BUTTON_BORDER, CURSOR_BORDER, CURSOR_FILL, PANEL_TEXT, START_BOTTOM, START_TEXT, START_TOP,
+    TASKBAR_BOTTOM, TASKBAR_EDGE_BOTTOM, TASKBAR_EDGE_TOP, TASKBAR_TOP, TEXT,
+    TITLEBAR_ACTIVE_BOTTOM, TITLEBAR_ACTIVE_TOP, TITLEBAR_INACTIVE_BOTTOM, TITLEBAR_INACTIVE_TOP,
+    WHITE, WINDOW_BG, WINDOW_BORDER, WINDOW_BORDER_INNER,
 };
 use libui::event::CursorKind;
 use libui::geom::Rect;
@@ -81,7 +81,12 @@ pub fn draw(
         draw_windows(&mut canvas, desktop);
         draw_taskbar(&mut canvas, desktop);
         draw_start_menu(&mut canvas, desktop);
-        draw_cursor(&mut canvas, desktop.cursor.x, desktop.cursor.y, desktop.cursor_kind);
+        draw_cursor(
+            &mut canvas,
+            desktop.cursor.x,
+            desktop.cursor.y,
+            desktop.cursor_kind,
+        );
     }
 }
 
@@ -155,14 +160,7 @@ fn measure_text_scaled(text: &str, scale: i32) -> i32 {
     (text.chars().count() as i32) * 8 * scale
 }
 
-fn draw_text_scaled(
-    canvas: &mut Canvas,
-    x: i32,
-    y: i32,
-    color: u32,
-    text: &str,
-    scale: i32,
-) {
+fn draw_text_scaled(canvas: &mut Canvas, x: i32, y: i32, color: u32, text: &str, scale: i32) {
     let mut xx = x;
     for ch in text.chars() {
         draw_char_scaled(canvas, xx, y, color, ch, scale);
@@ -420,7 +418,14 @@ fn draw_taskbar(canvas: &mut Canvas, desktop: &Desktop) {
         let hovered = desktop.taskbar_hover_window == Some(i);
         let active = desktop.focused == Some(i) && !desktop.windows[i].minimized;
         let close_hover = desktop.taskbar_close_hover == Some(i);
-        draw_task_button(canvas, rect, desktop.windows[i].title, hovered, active, close_hover);
+        draw_task_button(
+            canvas,
+            rect,
+            desktop.windows[i].title,
+            hovered,
+            active,
+            close_hover,
+        );
     }
 
     let clock = desktop.clock_rect();
@@ -438,9 +443,17 @@ fn draw_task_button(
     close_hover: bool,
 ) {
     let (top, bottom, text_color) = if active {
-        (TASK_BTN_ACTIVE_TOP, TASK_BTN_ACTIVE_BOTTOM, TASK_BTN_TEXT_ACTIVE)
+        (
+            TASK_BTN_ACTIVE_TOP,
+            TASK_BTN_ACTIVE_BOTTOM,
+            TASK_BTN_TEXT_ACTIVE,
+        )
     } else if hovered {
-        (TASK_BTN_HOVER_TOP, TASK_BTN_HOVER_BOTTOM, TASK_BTN_TEXT_ACTIVE)
+        (
+            TASK_BTN_HOVER_TOP,
+            TASK_BTN_HOVER_BOTTOM,
+            TASK_BTN_TEXT_ACTIVE,
+        )
     } else {
         (TASK_BTN_IDLE_TOP, TASK_BTN_IDLE_BOTTOM, TASK_BTN_TEXT_IDLE)
     };
@@ -501,7 +514,8 @@ fn draw_clock(canvas: &mut Canvas, clock: Rect) {
     };
 
     let time_str = core::str::from_utf8(&formatted.time).unwrap_or("--:--");
-    let date_str = core::str::from_utf8(&formatted.date[..formatted.date_len]).unwrap_or("-- --- ----");
+    let date_str =
+        core::str::from_utf8(&formatted.date[..formatted.date_len]).unwrap_or("-- --- ----");
 
     let time_w = libui::text::measure_text(time_str);
     let date_w = libui::text::measure_text(date_str);
@@ -607,7 +621,14 @@ fn draw_start_menu(canvas: &mut Canvas, desktop: &Desktop) {
         }
     }
 
-    let _ = (START_W, TASK_BUTTON_W, TASKBAR_H, MENU_ITEM_H, SUBMENU_W, BG);
+    let _ = (
+        START_W,
+        TASK_BUTTON_W,
+        TASKBAR_H,
+        MENU_ITEM_H,
+        SUBMENU_W,
+        BG,
+    );
 }
 
 fn blit_rgba_icon(

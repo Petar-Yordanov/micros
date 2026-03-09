@@ -1,8 +1,7 @@
 use micros_abi::errno;
 
 use x86_64::instructions::{
-    hlt,
-    interrupts,
+    hlt, interrupts,
     port::{Port, PortWriteOnly},
 };
 

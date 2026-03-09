@@ -6,13 +6,7 @@ use crate::color::{
 use crate::geom::Rect;
 use crate::text::{draw_text, measure_text, CHAR_H};
 
-pub fn draw_button(
-    canvas: &mut Canvas,
-    rect: Rect,
-    label: &str,
-    hovered: bool,
-    pressed: bool,
-) {
+pub fn draw_button(canvas: &mut Canvas, rect: Rect, label: &str, hovered: bool, pressed: bool) {
     let face = if pressed {
         BUTTON_PRESSED
     } else if hovered {

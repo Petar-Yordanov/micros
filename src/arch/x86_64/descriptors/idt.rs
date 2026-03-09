@@ -57,8 +57,7 @@ pub unsafe fn init(df_ist_index: u16) {
         idt[Irq::VirtioGpu as u8].set_handler_fn(virtio_gpu_irq);
         idt[Irq::Spurious as u8].set_handler_fn(spurious_irq);
 
-        idt[Irq::Timer as u8]
-            .set_handler_addr(VirtAddr::new(timer_entry as *const () as u64));
+        idt[Irq::Timer as u8].set_handler_addr(VirtAddr::new(timer_entry as *const () as u64));
 
         idt[0x80]
             .set_handler_addr(VirtAddr::new(syscall_entry as *const () as u64))
@@ -66,7 +65,7 @@ pub unsafe fn init(df_ist_index: u16) {
 
         unsafe {
             idt[0x80]
-                .set_handler_addr(VirtAddr::new(syscall_entry as u64))
+                .set_handler_addr(VirtAddr::new(syscall_entry as *const () as u64))
                 .set_privilege_level(PrivilegeLevel::Ring3);
         }
 

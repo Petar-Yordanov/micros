@@ -1,6 +1,6 @@
 use core::ptr::write_volatile;
 
-use font8x8::{BASIC_FONTS, UnicodeFonts};
+use font8x8::{UnicodeFonts, BASIC_FONTS};
 
 use super::console::BootConsole;
 
@@ -64,7 +64,9 @@ impl BootConsole {
     }
 
     pub fn draw_char(&mut self, x: usize, y: usize, ch: char, color: u32) {
-        let Some(glyph) = BASIC_FONTS.get(ch) else { return };
+        let Some(glyph) = BASIC_FONTS.get(ch) else {
+            return;
+        };
 
         let mut gy = 0usize;
         while gy < 8 {

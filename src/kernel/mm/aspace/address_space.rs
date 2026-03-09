@@ -1,8 +1,8 @@
+use crate::platform::limine::hhdm::HHDM_REQ;
 use spin::Once;
 use x86_64::registers::control::{Cr3, Cr3Flags};
-use x86_64::structures::paging::{PhysFrame, Size4KiB};
 use x86_64::structures::paging::PageTable;
-use crate::platform::limine::hhdm::HHDM_REQ;
+use x86_64::structures::paging::{PhysFrame, Size4KiB};
 use x86_64::VirtAddr;
 
 #[derive(Copy, Clone)]

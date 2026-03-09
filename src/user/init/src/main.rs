@@ -3,10 +3,10 @@
 
 mod bootgfx;
 
+use crate::bootgfx::splash::run_splash;
 use rlibc::exec::exec;
 use rlibc::log::log;
 use rlibc::vfs::mount_root_auto;
-use crate::bootgfx::splash::run_splash;
 
 #[panic_handler]
 fn panic(_: &core::panic::PanicInfo) -> ! {

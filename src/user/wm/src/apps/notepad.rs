@@ -6,10 +6,10 @@ use libui::canvas::Canvas;
 use libui::color::{PANEL_TEXT, TEXT, TEXT_DIM};
 use libui::event::{MouseButton, UiEvent};
 use libui::geom::{Point, Rect};
+use libui::text::draw_text;
 use libui::widgets::button::draw_button;
 use libui::widgets::panel::{draw_panel, inner_rect};
 use libui::widgets::text_area::{draw_text_area, handle_text_area_event, TextAreaState};
-use libui::text::draw_text;
 
 use crate::app::App;
 
@@ -114,7 +114,9 @@ impl NotepadApp {
                 }
                 Err(_) => {
                     self.text_area.text.clear();
-                    self.text_area.text.push_str("[File is not valid UTF-8 text]");
+                    self.text_area
+                        .text
+                        .push_str("[File is not valid UTF-8 text]");
                     self.dirty = false;
 
                     self.status.clear();
@@ -231,27 +233,23 @@ impl App for NotepadApp {
                 }
             }
 
-            UiEvent::KeyDown { code } => {
-                match code {
-                    63 => {
-                        self.save();
-                        changed = true;
-                    }
-                    _ => {
-                        match code {
-                            14 | 28 | 57 => {
-                                self.dirty = true;
-                                self.update_status_hint();
-                            }
-                            2..=13 | 16..=27 | 30..=53 => {
-                                self.dirty = true;
-                                self.update_status_hint();
-                            }
-                            _ => {}
-                        }
-                    }
+            UiEvent::KeyDown { code } => match code {
+                63 => {
+                    self.save();
+                    changed = true;
                 }
-            }
+                _ => match code {
+                    14 | 28 | 57 => {
+                        self.dirty = true;
+                        self.update_status_hint();
+                    }
+                    2..=13 | 16..=27 | 30..=53 => {
+                        self.dirty = true;
+                        self.update_status_hint();
+                    }
+                    _ => {}
+                },
+            },
 
             UiEvent::KeyUp { .. } => {}
             UiEvent::MouseWheel { .. } => {}

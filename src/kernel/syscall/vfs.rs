@@ -5,10 +5,10 @@ use core::cmp::min;
 
 use micros_abi::errno;
 
-use crate::kernel::mm::aspace::user_copy::{copy_from_user, copy_to_user};
 use crate::kernel::fs::vfs::error::VfsError;
 use crate::kernel::fs::vfs::mount as vfs_mount;
 use crate::kernel::fs::vfs::ops as vfs_ops;
+use crate::kernel::mm::aspace::user_copy::{copy_from_user, copy_to_user};
 
 use micros_abi::types::{VfsListArgs, VfsMountArgs, VfsMountFs, VfsReadArgs, VfsWriteArgs};
 
@@ -134,7 +134,11 @@ pub(super) fn sys_vfs_list(args_ptr: u64) -> i64 {
 pub(super) fn sys_vfs_mkdir(path_ptr: u64, path_len: u64) -> i64 {
     use x86_64::instructions::interrupts;
 
-    crate::ksprintln!("[sys_vfs_mkdir] enter path_ptr={:#x} path_len={}", path_ptr, path_len);
+    crate::ksprintln!(
+        "[sys_vfs_mkdir] enter path_ptr={:#x} path_len={}",
+        path_ptr,
+        path_len
+    );
 
     let path = match copy_user_str(path_ptr, path_len) {
         Ok(s) => s,

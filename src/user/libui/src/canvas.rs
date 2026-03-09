@@ -49,16 +49,15 @@ impl Canvas {
 
     #[inline]
     pub fn clear(&mut self, color: u32) {
-        self.fill_rect(Rect::new(0, 0, self.width as i32, self.height as i32), color);
+        self.fill_rect(
+            Rect::new(0, 0, self.width as i32, self.height as i32),
+            color,
+        );
     }
 
     #[inline]
     pub fn put_pixel(&mut self, x: i32, y: i32, color: u32) {
-        if x < self.clip.x
-            || y < self.clip.y
-            || x >= self.clip.right()
-            || y >= self.clip.bottom()
-        {
+        if x < self.clip.x || y < self.clip.y || x >= self.clip.right() || y >= self.clip.bottom() {
             return;
         }
 

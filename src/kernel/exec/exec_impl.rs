@@ -27,7 +27,8 @@ pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_f000;
 pub const USER_STACK_PAGES: usize = 16; // 64 KiB stack
 
 pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUserElf, ExecError> {
-    let img: Vec<u8> = crate::kernel::fs::vfs::ops::vfs_read(path).map_err(|_| ExecError::VfsReadFail)?;
+    let img: Vec<u8> =
+        crate::kernel::fs::vfs::ops::vfs_read(path).map_err(|_| ExecError::VfsReadFail)?;
     ksprintln!("[exec] read {} bytes from {}", img.len(), path);
     if img.len() >= 16 {
         ksprintln!(
@@ -155,7 +156,9 @@ pub fn run_user_elf(path: &str, name: &'static str) -> ! {
         });
     }
 
-    unsafe { aspace.activate(); }
+    unsafe {
+        aspace.activate();
+    }
 
     unsafe {
         let cur = task::current_ptr();

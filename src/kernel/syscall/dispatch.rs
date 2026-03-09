@@ -1,6 +1,7 @@
-use crate::kernel::syscall::{chan, exec, fb, input, log, proc, shm, time, vfs};
-use micros_abi::sysnr as nr;
 use crate::kernel::syscall::power;
+use crate::kernel::syscall::{chan, exec, fb, input, log, proc, shm, time, vfs};
+use micros_abi::errno;
+use micros_abi::sysnr as nr;
 
 pub fn dispatch(nr_no: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64) -> i64 {
     match nr_no {
@@ -51,7 +52,7 @@ pub fn dispatch(nr_no: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64
                 a4,
                 a5
             );
-            -38 // -ENOSYS (TODO: Substitute with micros_abi errno values)
+            -errno::ENOSYS
         }
     }
 }

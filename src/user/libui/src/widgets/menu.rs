@@ -106,7 +106,12 @@ pub fn draw_popup_menu(
         if state.hover == Some(i) {
             canvas.fill_rect(r, MENU_HOVER);
         }
-        draw_label(canvas, Rect::new(r.x + 6, r.y, r.w - 20, r.h), item.label, TEXT);
+        draw_label(
+            canvas,
+            Rect::new(r.x + 6, r.y, r.w - 20, r.h),
+            item.label,
+            TEXT,
+        );
         draw_text(canvas, r.right() - 14, r.y + 7, TEXT, None, ">");
     }
 

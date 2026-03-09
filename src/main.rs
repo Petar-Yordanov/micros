@@ -9,20 +9,20 @@ mod arch;
 mod kernel;
 mod platform;
 
-pub use crate::arch::x86_64::serial;
 use crate::arch::x86_64::cpu::{cpuid, fpu};
+pub use crate::arch::x86_64::serial;
 use crate::arch::x86_64::time::apic;
+use crate::bootlog::boot_progress_step;
 use crate::kernel::boot::idle;
-use crate::kernel::sched::kstack::alloc_kstack_top;
+use crate::kernel::bootlog;
 use crate::kernel::fs::vfs;
 use crate::kernel::mm::map::mapper::{self as page, Prot};
 use crate::kernel::mm::phys::frame;
 use crate::kernel::mm::virt::vmarena;
+use crate::kernel::sched::kstack::alloc_kstack_top;
 use crate::kernel::selftest::{test_frames, test_heap, test_paging, test_vmarena};
 use x86_64::registers::model_specific::Msr;
 use x86_64::{PhysAddr, VirtAddr};
-use crate::kernel::bootlog;
-use crate::bootlog::boot_progress_step;
 
 #[no_mangle]
 pub extern "C" fn _start() -> ! {

@@ -17,8 +17,18 @@ pub(super) fn sys_input_next_event(user_out_ptr: u64) -> i64 {
 
     let (etype_u16, code_u16, value_i32): (u16, u16, i32) = match msg {
         InputMsg::Syn => (0x00, 0, 0),
-        InputMsg::Key { code, pressed, repeat } => {
-            let v = if repeat { 2 } else if pressed { 1 } else { 0 };
+        InputMsg::Key {
+            code,
+            pressed,
+            repeat,
+        } => {
+            let v = if repeat {
+                2
+            } else if pressed {
+                1
+            } else {
+                0
+            };
             (0x01, code, v)
         }
         InputMsg::Rel { code, value } => (0x02, code, value),
