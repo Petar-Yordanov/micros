@@ -64,6 +64,12 @@ pub unsafe fn init(df_ist_index: u16) {
             .set_handler_addr(VirtAddr::new(syscall_entry as *const () as u64))
             .set_privilege_level(PrivilegeLevel::Ring3);
 
+        unsafe {
+            idt[0x80]
+                .set_handler_addr(VirtAddr::new(syscall_entry as u64))
+                .set_privilege_level(PrivilegeLevel::Ring3);
+        }
+
         idt
     });
 
