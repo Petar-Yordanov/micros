@@ -1,7 +1,5 @@
 use crate::canvas::Canvas;
-use crate::color::{
-    BUTTON_BORDER, LIST_BG, LIST_ROW_HOVER, LIST_ROW_SELECTED, TEXT, TREE_GLYPH,
-};
+use crate::color::{BUTTON_BORDER, LIST_BG, LIST_ROW_HOVER, LIST_ROW_SELECTED, TEXT, TREE_GLYPH};
 use crate::event::{MouseButton, UiEvent};
 use crate::geom::Rect;
 use crate::text::{draw_text, CHAR_H};
@@ -72,7 +70,10 @@ pub fn draw_tree_view(
 
     let content = content_rect(rect);
     let content_h = (rows.len() as i32).saturating_mul(TREE_ROW_H);
-    let off = state.scroll.offset.clamp(0, max_offset(content.h, content_h));
+    let off = state
+        .scroll
+        .offset
+        .clamp(0, max_offset(content.h, content_h));
 
     let start = (off / TREE_ROW_H).max(0) as usize;
     let end = ((off + content.h + TREE_ROW_H - 1) / TREE_ROW_H).max(0) as usize;
@@ -123,15 +124,15 @@ pub fn handle_tree_view_event(
 ) -> (bool, Option<TreeViewAction>) {
     let content = content_rect(rect);
     let content_h = (rows.len() as i32).saturating_mul(TREE_ROW_H);
-    let mut changed =
-        handle_v_scrollbar_event(rect, &mut state.scroll, content.h, content_h, ev);
+    let mut changed = handle_v_scrollbar_event(rect, &mut state.scroll, content.h, content_h, ev);
     let mut action = None;
 
     match *ev {
         UiEvent::MouseMove { pos } => {
             let old = state.hovered_row;
             if content.contains(pos) {
-                state.hovered_row = row_from_local_y(pos.y - content.y, state.scroll.offset, rows.len());
+                state.hovered_row =
+                    row_from_local_y(pos.y - content.y, state.scroll.offset, rows.len());
             } else {
                 state.hovered_row = None;
             }

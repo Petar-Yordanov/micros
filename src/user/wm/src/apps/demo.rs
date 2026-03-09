@@ -229,22 +229,54 @@ impl DemoApp {
 
     fn table_row<'a>(idx: usize) -> TableRow<'a> {
         match idx {
-            0 => TableRow { cells: &["1", "RUN", "init"] },
-            1 => TableRow { cells: &["2", "RUN", "wm"] },
-            2 => TableRow { cells: &["3", "SLEEP", "clock"] },
-            3 => TableRow { cells: &["4", "RUN", "demo"] },
-            4 => TableRow { cells: &["5", "WAIT", "shell"] },
-            5 => TableRow { cells: &["6", "RUN", "taskmgr"] },
-            6 => TableRow { cells: &["7", "RUN", "explorer"] },
-            7 => TableRow { cells: &["8", "SLEEP", "logger"] },
-            8 => TableRow { cells: &["9", "RUN", "netd"] },
-            9 => TableRow { cells: &["10", "WAIT", "inputd"] },
-            10 => TableRow { cells: &["11", "RUN", "audio"] },
-            11 => TableRow { cells: &["12", "RUN", "service"] },
-            12 => TableRow { cells: &["13", "WAIT", "worker0"] },
-            13 => TableRow { cells: &["14", "WAIT", "worker1"] },
-            14 => TableRow { cells: &["15", "RUN", "worker2"] },
-            _ => TableRow { cells: &["", "", ""] },
+            0 => TableRow {
+                cells: &["1", "RUN", "init"],
+            },
+            1 => TableRow {
+                cells: &["2", "RUN", "wm"],
+            },
+            2 => TableRow {
+                cells: &["3", "SLEEP", "clock"],
+            },
+            3 => TableRow {
+                cells: &["4", "RUN", "demo"],
+            },
+            4 => TableRow {
+                cells: &["5", "WAIT", "shell"],
+            },
+            5 => TableRow {
+                cells: &["6", "RUN", "taskmgr"],
+            },
+            6 => TableRow {
+                cells: &["7", "RUN", "explorer"],
+            },
+            7 => TableRow {
+                cells: &["8", "SLEEP", "logger"],
+            },
+            8 => TableRow {
+                cells: &["9", "RUN", "netd"],
+            },
+            9 => TableRow {
+                cells: &["10", "WAIT", "inputd"],
+            },
+            10 => TableRow {
+                cells: &["11", "RUN", "audio"],
+            },
+            11 => TableRow {
+                cells: &["12", "RUN", "service"],
+            },
+            12 => TableRow {
+                cells: &["13", "WAIT", "worker0"],
+            },
+            13 => TableRow {
+                cells: &["14", "WAIT", "worker1"],
+            },
+            14 => TableRow {
+                cells: &["15", "RUN", "worker2"],
+            },
+            _ => TableRow {
+                cells: &["", "", ""],
+            },
         }
     }
 
@@ -537,7 +569,8 @@ impl App for DemoApp {
                         self.clamp_table_scroll();
                         changed = true;
                     } else if console_rect.contains(pos) {
-                        self.console.scroll.offset = self.console.scroll.offset.saturating_add(step);
+                        self.console.scroll.offset =
+                            self.console.scroll.offset.saturating_add(step);
                         self.clamp_console_scroll();
                         changed = true;
                     }
@@ -607,9 +640,18 @@ impl App for DemoApp {
         let status = Self::status_rect_local().translate(client_rect.x, client_rect.y);
 
         let cols = [
-            TableColumn { title: "PID", width: 48 },
-            TableColumn { title: "State", width: 72 },
-            TableColumn { title: "Name", width: 140 },
+            TableColumn {
+                title: "PID",
+                width: 48,
+            },
+            TableColumn {
+                title: "State",
+                width: 72,
+            },
+            TableColumn {
+                title: "Name",
+                width: 140,
+            },
         ];
 
         let rows = [
@@ -657,12 +699,40 @@ impl App for DemoApp {
             self.menu_button_hover,
             self.menu_button_pressed,
         );
-        draw_text(canvas, toolbar.x + 356, toolbar.y + 6, PANEL_TEXT, None, "Path:");
+        draw_text(
+            canvas,
+            toolbar.x + 356,
+            toolbar.y + 6,
+            PANEL_TEXT,
+            None,
+            "Path:",
+        );
         draw_text_field(canvas, path_rect, &self.path);
 
-        draw_text(canvas, tree_rect.x, tree_rect.y - 12, TEXT_DIM, None, "Tree View");
-        draw_text(canvas, list_rect.x, list_rect.y - 12, TEXT_DIM, None, "List View");
-        draw_text(canvas, table_rect.x, table_rect.y - 12, TEXT_DIM, None, "Table View");
+        draw_text(
+            canvas,
+            tree_rect.x,
+            tree_rect.y - 12,
+            TEXT_DIM,
+            None,
+            "Tree View",
+        );
+        draw_text(
+            canvas,
+            list_rect.x,
+            list_rect.y - 12,
+            TEXT_DIM,
+            None,
+            "List View",
+        );
+        draw_text(
+            canvas,
+            table_rect.x,
+            table_rect.y - 12,
+            TEXT_DIM,
+            None,
+            "Table View",
+        );
         draw_text(
             canvas,
             console_rect.x,
@@ -680,20 +750,31 @@ impl App for DemoApp {
         draw_panel(canvas, status);
         let status_inner = inner_rect(status, 6);
 
-        draw_text(canvas, status_inner.x, status_inner.y + 5, TEXT, None, "Selected file:");
+        draw_text(
+            canvas,
+            status_inner.x,
+            status_inner.y + 5,
+            TEXT,
+            None,
+            "Selected file:",
+        );
         draw_text(
             canvas,
             status_inner.x + 112,
             status_inner.y + 5,
             PANEL_TEXT,
             None,
-            self.list
-                .selected
-                .map(Self::list_item)
-                .unwrap_or("(none)"),
+            self.list.selected.map(Self::list_item).unwrap_or("(none)"),
         );
 
-        draw_text(canvas, status_inner.x + 260, status_inner.y + 5, TEXT, None, "Task row:");
+        draw_text(
+            canvas,
+            status_inner.x + 260,
+            status_inner.y + 5,
+            TEXT,
+            None,
+            "Task row:",
+        );
         draw_text(
             canvas,
             status_inner.x + 324,
@@ -707,7 +788,14 @@ impl App for DemoApp {
             },
         );
 
-        draw_text(canvas, status_inner.x + 420, status_inner.y + 5, TEXT, None, "Tree:");
+        draw_text(
+            canvas,
+            status_inner.x + 420,
+            status_inner.y + 5,
+            TEXT,
+            None,
+            "Tree:",
+        );
         draw_text(
             canvas,
             status_inner.x + 460,

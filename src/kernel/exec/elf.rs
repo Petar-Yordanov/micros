@@ -2,16 +2,15 @@ extern crate alloc;
 
 use x86_64::{
     structures::paging::{
-        page_table::PageTableEntry,
-        PageTable, PageTableFlags, PhysFrame, Size4KiB,
+        page_table::PageTableEntry, PageTable, PageTableFlags, PhysFrame, Size4KiB,
     },
     PhysAddr, VirtAddr,
 };
 
 use crate::kernel::mm::aspace::address_space::AddressSpace;
 use crate::kernel::mm::phys::frame;
-use crate::platform::limine::hhdm::HHDM_REQ;
 use crate::ksprintln;
+use crate::platform::limine::hhdm::HHDM_REQ;
 
 #[derive(Debug)]
 pub enum ElfError {
@@ -105,7 +104,10 @@ fn map_page(
     let p2i = v.p2_index();
     let p1i = v.p1_index();
 
-    fn ensure_table<'a>(off: VirtAddr, ent: &mut PageTableEntry) -> Result<&'a mut PageTable, ElfError> {
+    fn ensure_table<'a>(
+        off: VirtAddr,
+        ent: &mut PageTableEntry,
+    ) -> Result<&'a mut PageTable, ElfError> {
         if ent.is_unused() {
             let new = frame::alloc().ok_or(ElfError::NoMem)?;
             let new_pa = new.start_address().as_u64();
@@ -161,7 +163,12 @@ fn page_mapped(aspace: &AddressSpace, va: u64) -> bool {
     va_to_pa(aspace, va & !0xfffu64).is_some()
 }
 
-pub fn map_user_zero(aspace: &AddressSpace, va: u64, len: u64, writable: bool) -> Result<(), ElfError> {
+pub fn map_user_zero(
+    aspace: &AddressSpace,
+    va: u64,
+    len: u64,
+    writable: bool,
+) -> Result<(), ElfError> {
     let off = phys_off();
     let start = va & !0xfffu64;
     let end = (va + len + 0xfff) & !0xfffu64;
@@ -191,9 +198,11 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
     let eh = read_ehdr(img)?;
     ksprintln!(
         "[exec] ehdr entry={:#x} phoff={} phentsize={} phnum={}",
-        eh.e_entry, eh.e_phoff, eh.e_phentsize, eh.e_phnum
+        eh.e_entry,
+        eh.e_phoff,
+        eh.e_phentsize,
+        eh.e_phnum
     );
-
 
     let phoff = eh.e_phoff as usize;
     let entsz = eh.e_phentsize as usize;
@@ -269,11 +278,7 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
 
             // bytes from ELF image
             for i in 0..verify_n {
-                ksprintln!(
-                    "[exec]   src[{}] = {:02x}",
-                    i,
-                    img[file_off + i]
-                );
+                ksprintln!("[exec]   src[{}] = {:02x}", i, img[file_off + i]);
             }
 
             // bytes actually mapped in user memory
@@ -319,12 +324,7 @@ fn dump_user_bytes(aspace: &AddressSpace, va: u64, n: usize) {
         match va_to_pa(aspace, cur_va) {
             Some(pa) => {
                 let b = unsafe { *((phys_off() + pa).as_ptr::<u8>()) };
-                ksprintln!(
-                    "[exec]   va={:#x} pa={:#x} byte={:02x}",
-                    cur_va,
-                    pa,
-                    b
-                );
+                ksprintln!("[exec]   va={:#x} pa={:#x} byte={:02x}", cur_va, pa, b);
             }
             None => {
                 ksprintln!("[exec]   va={:#x} unmapped", cur_va);

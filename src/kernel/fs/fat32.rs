@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 
 extern crate alloc;
-use alloc::{string::String, vec::Vec};
 use alloc::vec;
+use alloc::{string::String, vec::Vec};
 
 use core::cmp::min;
 
@@ -101,7 +101,9 @@ fn eq_ci(a: &str, b: &str) -> bool {
 
 fn short_name_to_string(name11: &[u8; 11], is_dir: bool) -> String {
     let base = core::str::from_utf8(&name11[..8]).unwrap_or("").trim_end();
-    let ext = core::str::from_utf8(&name11[8..11]).unwrap_or("").trim_end();
+    let ext = core::str::from_utf8(&name11[8..11])
+        .unwrap_or("")
+        .trim_end();
     let mut s = String::new();
     s.push_str(base);
     if !is_dir && !ext.is_empty() {
@@ -521,7 +523,12 @@ impl Fat32 {
         Ok(cur)
     }
 
-    fn append_to_chain(&self, start_clus: u32, cur_size: u32, data: &[u8]) -> Result<(u32, u32), FatErr> {
+    fn append_to_chain(
+        &self,
+        start_clus: u32,
+        cur_size: u32,
+        data: &[u8],
+    ) -> Result<(u32, u32), FatErr> {
         if data.is_empty() {
             return Ok((start_clus, cur_size));
         }
@@ -620,7 +627,8 @@ impl Fat32 {
 
             let attr = chunk[11];
             if is_lfn(attr) {
-                let ent: LfnEnt = unsafe { core::ptr::read_unaligned(chunk.as_ptr() as *const LfnEnt) };
+                let ent: LfnEnt =
+                    unsafe { core::ptr::read_unaligned(chunk.as_ptr() as *const LfnEnt) };
                 if (ent.ord & 0x40) != 0 {
                     lfn_ents.clear();
                     lfn_chk = Some(ent.checksum);
@@ -669,7 +677,11 @@ impl Fat32 {
 
     fn dir_find_in_dir(&self, dirclus: u32, want: &str) -> Result<Option<DirEnt>, FatErr> {
         for (name, ent) in self.dir_list_from_with_names(dirclus)? {
-            let n = if name.ends_with('/') { &name[..name.len() - 1] } else { &name };
+            let n = if name.ends_with('/') {
+                &name[..name.len() - 1]
+            } else {
+                &name
+            };
             if eq_ci(n, want) {
                 return Ok(Some(ent));
             }
@@ -702,7 +714,11 @@ impl Fat32 {
         Ok(Some(cur))
     }
 
-    fn dir_find_free_run(&self, dirclus: u32, need_entries: usize) -> Result<(u32, u32, usize), FatErr> {
+    fn dir_find_free_run(
+        &self,
+        dirclus: u32,
+        need_entries: usize,
+    ) -> Result<(u32, u32, usize), FatErr> {
         let mut cur = dirclus;
         loop {
             let first_sec = self.clus_to_first_sector(cur);
@@ -795,11 +811,7 @@ impl Fat32 {
             dst[off + 1] = b[1];
         }
 
-        const OFFS: [usize; 13] = [
-            1, 3, 5, 7, 9,
-            14, 16, 18, 20, 22, 24,
-            28, 30,
-        ];
+        const OFFS: [usize; 13] = [1, 3, 5, 7, 9, 14, 16, 18, 20, 22, 24, 28, 30];
 
         let mut out: Vec<[u8; 32]> = Vec::with_capacity(total);
 
@@ -813,7 +825,7 @@ impl Fat32 {
             raw[0] = ord;
             raw[11] = 0x0F; // attr
             raw[12] = 0x00; // type
-            raw[13] = chk;  // checksum
+            raw[13] = chk; // checksum
             raw[26] = 0x00;
             raw[27] = 0x00;
 
@@ -903,12 +915,17 @@ impl Fat32 {
                             continue;
                         }
                         if &p[0..11] == &short {
-                            let mut ent: DirEnt = unsafe { core::ptr::read_unaligned(p.as_ptr() as *const DirEnt) };
+                            let mut ent: DirEnt =
+                                unsafe { core::ptr::read_unaligned(p.as_ptr() as *const DirEnt) };
                             ent.attr = if is_dir { ATTR_DIR } else { ATTR_ARCHIVE };
                             set_dirent_first_clus(&mut ent, start_clus);
                             ent.file_size = size.to_le();
                             unsafe {
-                                core::ptr::copy_nonoverlapping((&ent as *const DirEnt) as *const u8, p.as_mut_ptr(), 32);
+                                core::ptr::copy_nonoverlapping(
+                                    (&ent as *const DirEnt) as *const u8,
+                                    p.as_mut_ptr(),
+                                    32,
+                                );
                             }
                             self.write_sector(secno, &buf)?;
                             return Ok(());
@@ -946,7 +963,11 @@ impl Fat32 {
 
         let mut short_raw = [0u8; 32];
         unsafe {
-            core::ptr::copy_nonoverlapping((&short_ent as *const DirEnt) as *const u8, short_raw.as_mut_ptr(), 32);
+            core::ptr::copy_nonoverlapping(
+                (&short_ent as *const DirEnt) as *const u8,
+                short_raw.as_mut_ptr(),
+                32,
+            );
         }
 
         let mut entries: Vec<[u8; 32]> = Vec::new();
@@ -1079,8 +1100,16 @@ impl Fat32 {
         let mut sec0 = [0u8; SEC];
         self.read_sector(first_sec, &mut sec0)?;
         unsafe {
-            core::ptr::copy_nonoverlapping((&dot as *const DirEnt) as *const u8, sec0.as_mut_ptr(), 32);
-            core::ptr::copy_nonoverlapping((&dotdot as *const DirEnt) as *const u8, sec0.as_mut_ptr().add(32), 32);
+            core::ptr::copy_nonoverlapping(
+                (&dot as *const DirEnt) as *const u8,
+                sec0.as_mut_ptr(),
+                32,
+            );
+            core::ptr::copy_nonoverlapping(
+                (&dotdot as *const DirEnt) as *const u8,
+                sec0.as_mut_ptr().add(32),
+                32,
+            );
         }
         self.write_sector(first_sec, &sec0)?;
 
@@ -1123,14 +1152,24 @@ impl Fat32 {
         self.write_file_at(parent_dir, fname[0], data, overwrite)
     }
 
-    fn write_file_at(&self, parent_dir: Option<u32>, name: &str, data: &[u8], overwrite: bool) -> Result<(), FatErr> {
+    fn write_file_at(
+        &self,
+        parent_dir: Option<u32>,
+        name: &str,
+        data: &[u8],
+        overwrite: bool,
+    ) -> Result<(), FatErr> {
         let dirclus = parent_dir.unwrap_or(self.root_clus);
 
         let mut existing: Option<DirEnt> = None;
         let mut existing_short: Option<[u8; 11]> = None;
 
         for (nm, ent) in self.dir_list_from_with_names(dirclus)? {
-            let nn = if nm.ends_with('/') { &nm[..nm.len() - 1] } else { &nm };
+            let nn = if nm.ends_with('/') {
+                &nm[..nm.len() - 1]
+            } else {
+                &nm
+            };
             if eq_ci(nn, name) {
                 if (ent.attr & ATTR_DIR) != 0 {
                     return Err(FatErr::Name);
@@ -1159,11 +1198,25 @@ impl Fat32 {
                     c
                 };
 
-                self.dir_write_file_entry(dirclus, name, start, data.len() as u32, Some(existing_short.unwrap()), false)?;
+                self.dir_write_file_entry(
+                    dirclus,
+                    name,
+                    start,
+                    data.len() as u32,
+                    Some(existing_short.unwrap()),
+                    false,
+                )?;
                 return Ok(());
             } else {
                 let (start, new_size) = self.append_to_chain(old_start, old_size, data)?;
-                self.dir_write_file_entry(dirclus, name, start, new_size, Some(existing_short.unwrap()), false)?;
+                self.dir_write_file_entry(
+                    dirclus,
+                    name,
+                    start,
+                    new_size,
+                    Some(existing_short.unwrap()),
+                    false,
+                )?;
                 return Ok(());
             }
         }

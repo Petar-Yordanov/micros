@@ -32,8 +32,7 @@ const KIND_TICK: u32 = 2;
 
 fn parse_u64_ascii(buf: &[u8]) -> Option<u64> {
     let mut i = 0usize;
-    while i < buf.len()
-        && (buf[i] == b' ' || buf[i] == b'\n' || buf[i] == b'\r' || buf[i] == b'\t')
+    while i < buf.len() && (buf[i] == b' ' || buf[i] == b'\n' || buf[i] == b'\r' || buf[i] == b'\t')
     {
         i += 1;
     }

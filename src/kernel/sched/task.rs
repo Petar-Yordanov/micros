@@ -444,7 +444,11 @@ pub unsafe fn preempt_from_timer(tf: &mut TrapFrame) -> *const TrapFrame {
             }
         }
 
-        if picked.is_null() { idle_ptr() } else { picked }
+        if picked.is_null() {
+            idle_ptr()
+        } else {
+            picked
+        }
     };
 
     if next_ptr.is_null() || next_ptr == cur_ptr {
@@ -502,7 +506,11 @@ pub fn schedule() {
             }
         }
 
-        if picked.is_null() { idle_ptr() } else { picked }
+        if picked.is_null() {
+            idle_ptr()
+        } else {
+            picked
+        }
     };
 
     if next_ptr.is_null() {

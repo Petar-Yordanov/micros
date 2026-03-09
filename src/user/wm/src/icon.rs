@@ -102,7 +102,11 @@ fn parse_dir_entries(data: &[u8]) -> Result<Vec<DirEntry>, IcoError> {
             return Err(IcoError::BadEntry);
         }
 
-        let w = if data[off] == 0 { 256 } else { data[off] as usize };
+        let w = if data[off] == 0 {
+            256
+        } else {
+            data[off] as usize
+        };
         let _color_count = data[off + 2];
         let _reserved = data[off + 3];
         let _planes = le_u16(data, off + 4)?;
@@ -162,7 +166,9 @@ fn decode_bmp_ico_entry(data: &[u8], entry: DirEntry) -> Result<DecodedIcon, Ico
     }
 
     let xor_stride = row_stride(width, bpp as usize);
-    let xor_size = xor_stride.checked_mul(height).ok_or(IcoError::OutOfBounds)?;
+    let xor_size = xor_stride
+        .checked_mul(height)
+        .ok_or(IcoError::OutOfBounds)?;
     let xor_off = dib_size;
     let xor_end = xor_off.checked_add(xor_size).ok_or(IcoError::OutOfBounds)?;
     if xor_end > blob.len() {
@@ -170,7 +176,9 @@ fn decode_bmp_ico_entry(data: &[u8], entry: DirEntry) -> Result<DecodedIcon, Ico
     }
 
     let and_stride = ((width + 31) / 32) * 4;
-    let and_size = and_stride.checked_mul(height).ok_or(IcoError::OutOfBounds)?;
+    let and_size = and_stride
+        .checked_mul(height)
+        .ok_or(IcoError::OutOfBounds)?;
     let and_off = xor_end;
     let and_end = and_off.checked_add(and_size).ok_or(IcoError::OutOfBounds)?;
     if and_off > blob.len() {
@@ -189,8 +197,12 @@ fn decode_bmp_ico_entry(data: &[u8], entry: DirEntry) -> Result<DecodedIcon, Ico
     let bottom_up = bmp_h_total > 0;
 
     match bpp {
-        32 => decode_bgra32(xor, and_mask, width, height, xor_stride, and_stride, bottom_up, &mut out)?,
-        24 => decode_bgr24_and_mask(xor, and_mask, width, height, xor_stride, and_stride, bottom_up, &mut out)?,
+        32 => decode_bgra32(
+            xor, and_mask, width, height, xor_stride, and_stride, bottom_up, &mut out,
+        )?,
+        24 => decode_bgr24_and_mask(
+            xor, and_mask, width, height, xor_stride, and_stride, bottom_up, &mut out,
+        )?,
         _ => return Err(IcoError::UnsupportedBitDepth),
     }
 

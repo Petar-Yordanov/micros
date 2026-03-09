@@ -142,7 +142,11 @@ pub extern "x86-interrupt" fn pf_handler(sf: InterruptStackFrame, code: PageFaul
         let (tid, ktop, rsp) = if cur.is_null() {
             (0, 0, sf.stack_pointer.as_u64())
         } else {
-            ((*cur).tid, (*cur).kstack_top.as_u64(), sf.stack_pointer.as_u64())
+            (
+                (*cur).tid,
+                (*cur).kstack_top.as_u64(),
+                sf.stack_pointer.as_u64(),
+            )
         };
 
         ksprintln!(

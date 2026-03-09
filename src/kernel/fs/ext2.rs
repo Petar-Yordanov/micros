@@ -154,9 +154,7 @@ impl Ext2 {
         }
 
         let log_bs = rd32(&sb, 24);
-        let block_size = 1024u32
-            .checked_shl(log_bs)
-            .ok_or(Ext2Err::Unsupported)?;
+        let block_size = 1024u32.checked_shl(log_bs).ok_or(Ext2Err::Unsupported)?;
 
         if block_size != 1024 && block_size != 2048 && block_size != 4096 {
             return Err(Ext2Err::Unsupported);
@@ -168,7 +166,11 @@ impl Ext2 {
 
         let inode_size = {
             let v = rd16(&sb, 88);
-            if v == 0 { 128 } else { v }
+            if v == 0 {
+                128
+            } else {
+                v
+            }
         };
 
         let bgdt_block = if block_size == 1024 { 2 } else { 1 };
@@ -361,7 +363,11 @@ impl Ext2 {
         Ok(rd32(&buf, (index as usize) * 4))
     }
 
-    fn inode_data_block_no(&self, blkptrs: &[u32; 15], file_block_idx: u32) -> Result<u32, Ext2Err> {
+    fn inode_data_block_no(
+        &self,
+        blkptrs: &[u32; 15],
+        file_block_idx: u32,
+    ) -> Result<u32, Ext2Err> {
         let per_block = self.block_size / 4;
 
         // direct
@@ -616,7 +622,11 @@ impl Ext2 {
         Ok(())
     }
 
-    fn bitmap_find_and_set(bitset: &mut [u8], start_bit: usize, limit_bits: usize) -> Option<usize> {
+    fn bitmap_find_and_set(
+        bitset: &mut [u8],
+        start_bit: usize,
+        limit_bits: usize,
+    ) -> Option<usize> {
         let mut b = start_bit;
         while b < limit_bits {
             let byte = b / 8;
@@ -739,7 +749,13 @@ impl Ext2 {
         wr32(raw, INODE_OFF_FLAGS, 0);
     }
 
-    fn add_dir_entry(&self, dir_ino: u32, child_ino: u32, name: &str, ftype: u8) -> Result<(), Ext2Err> {
+    fn add_dir_entry(
+        &self,
+        dir_ino: u32,
+        child_ino: u32,
+        name: &str,
+        ftype: u8,
+    ) -> Result<(), Ext2Err> {
         if name.is_empty() {
             return Err(Ext2Err::Name);
         }
@@ -1005,7 +1021,13 @@ impl Ext2 {
         Ok(())
     }
 
-    fn append_to_file(&self, ino: u32, cur_size: u32, _ptrs: &[u32; 15], data: &[u8]) -> Result<(), Ext2Err> {
+    fn append_to_file(
+        &self,
+        ino: u32,
+        cur_size: u32,
+        _ptrs: &[u32; 15],
+        data: &[u8],
+    ) -> Result<(), Ext2Err> {
         if data.is_empty() {
             return Ok(());
         }

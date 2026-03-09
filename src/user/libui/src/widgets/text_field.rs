@@ -100,7 +100,11 @@ pub fn draw_text_field(canvas: &mut Canvas, rect: Rect, state: &TextFieldState) 
     canvas.fill_rect(rect, INPUT_BG);
     canvas.stroke_rect(
         rect,
-        if state.focused { INPUT_FOCUS } else { INPUT_BORDER },
+        if state.focused {
+            INPUT_FOCUS
+        } else {
+            INPUT_BORDER
+        },
     );
 
     let inner = inner_rect(rect);
@@ -113,7 +117,10 @@ pub fn draw_text_field(canvas: &mut Canvas, rect: Rect, state: &TextFieldState) 
     if state.focused {
         let cursor_col = state.cursor.saturating_sub(start).min(visible.len()) as i32;
         let cx = inner.x + cursor_col * CHAR_W;
-        canvas.fill_rect(Rect::new(cx, inner.y + 2, 1, inner.h.saturating_sub(4)), INPUT_CURSOR);
+        canvas.fill_rect(
+            Rect::new(cx, inner.y + 2, 1, inner.h.saturating_sub(4)),
+            INPUT_CURSOR,
+        );
     }
 }
 

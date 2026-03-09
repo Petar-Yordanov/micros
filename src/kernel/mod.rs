@@ -1,16 +1,16 @@
 pub mod syscall {
+    pub mod chan;
     pub mod dispatch;
     pub mod exec;
     pub mod fb;
     pub mod input;
     pub mod log;
+    pub mod power;
     pub mod proc;
+    pub mod shm;
+    pub mod time;
     pub mod util;
     pub mod vfs;
-    pub mod time;
-    pub mod chan;
-    pub mod shm;
-    pub mod power;
     pub use dispatch::dispatch;
 }
 
@@ -44,15 +44,15 @@ pub mod mm {
 }
 
 pub mod sched {
+    pub mod kstack;
     pub mod proc;
     pub mod switch_context;
     pub mod task;
-    pub mod kstack;
 }
 
 pub mod fs {
-    pub mod fat32;
     pub mod ext2;
+    pub mod fat32;
     pub mod vfs {
         pub mod error;
         pub mod mount;
@@ -81,7 +81,8 @@ pub mod drivers {
             pub(crate) use caps::VirtioPciRegs;
             pub use init::init;
             pub use transport::{
-                devcfg_read_le32, devcfg_read_le64, negotiate_features, setup_queue, STATUS_DRIVER_OK,
+                devcfg_read_le32, devcfg_read_le64, negotiate_features, setup_queue,
+                STATUS_DRIVER_OK,
             };
         }
 
@@ -97,26 +98,22 @@ pub mod drivers {
 }
 
 pub mod exec {
-    pub mod init;
     pub mod elf;
     pub mod exec_impl;
+    pub mod init;
 
     pub use exec_impl::*;
 }
 
 pub mod bootlog {
-    mod state;
     mod console;
     mod render;
+    mod state;
     mod tags;
 
     pub use state::{
-        boot_progress_step,
-        bootlog_fb_disable,
-        bootlog_fb_enable,
-        bootlog_push_line,
-        bootlog_set_progress_total,
-        try_init,
+        boot_progress_step, bootlog_fb_disable, bootlog_fb_enable, bootlog_push_line,
+        bootlog_set_progress_total, try_init,
     };
 }
 pub mod boot;

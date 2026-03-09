@@ -67,7 +67,8 @@ pub fn draw_loading_bar(s: &mut Surface<'_>, frame: usize) {
 
         if sx < (inner_x + inner_w) as isize && sx + BAR_SEG_W as isize > inner_x as isize {
             let draw_x = core::cmp::max(sx, inner_x as isize) as usize;
-            let seg_end = core::cmp::min(sx + BAR_SEG_W as isize, (inner_x + inner_w) as isize) as usize;
+            let seg_end =
+                core::cmp::min(sx + BAR_SEG_W as isize, (inner_x + inner_w) as isize) as usize;
             let draw_w = seg_end.saturating_sub(draw_x);
 
             if draw_w != 0 {

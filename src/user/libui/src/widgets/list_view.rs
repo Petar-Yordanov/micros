@@ -48,7 +48,10 @@ pub fn draw_list_view(canvas: &mut Canvas, rect: Rect, items: &[&str], state: &L
 
     let content = content_rect(rect);
     let content_h = (items.len() as i32).saturating_mul(LIST_ROW_H);
-    let off = state.scroll.offset.clamp(0, max_offset(content.h, content_h));
+    let off = state
+        .scroll
+        .offset
+        .clamp(0, max_offset(content.h, content_h));
 
     let start = (off / LIST_ROW_H).max(0) as usize;
     let end = ((off + content.h + LIST_ROW_H - 1) / LIST_ROW_H).max(0) as usize;
@@ -78,8 +81,7 @@ pub fn handle_list_view_event(
 ) -> bool {
     let content = content_rect(rect);
     let content_h = (items_len as i32).saturating_mul(LIST_ROW_H);
-    let mut changed =
-        handle_v_scrollbar_event(rect, &mut state.scroll, content.h, content_h, ev);
+    let mut changed = handle_v_scrollbar_event(rect, &mut state.scroll, content.h, content_h, ev);
 
     match *ev {
         UiEvent::MouseMove { pos } => {

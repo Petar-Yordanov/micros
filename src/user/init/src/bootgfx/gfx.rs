@@ -80,14 +80,7 @@ impl<'a> Surface<'a> {
         self.fill_rect(x + w - 1, y, 1, h, color);
     }
 
-    pub fn draw_glyph_5x7(
-        &mut self,
-        x: usize,
-        y: usize,
-        glyph: [u8; 7],
-        scale: usize,
-        color: u32,
-    ) {
+    pub fn draw_glyph_5x7(&mut self, x: usize, y: usize, glyph: [u8; 7], scale: usize, color: u32) {
         let mut row = 0usize;
         while row < 7 {
             let bits = glyph[row];

@@ -85,7 +85,9 @@ fn thumb_rect(bar: Rect, viewport_h: i32, content_h: i32, offset: i32) -> Rect {
         return Rect::new(track.x, track.y, track.w, track.h.max(0));
     }
 
-    let mut h = (track.h.saturating_mul(viewport_h)).checked_div(content_h).unwrap_or(track.h);
+    let mut h = (track.h.saturating_mul(viewport_h))
+        .checked_div(content_h)
+        .unwrap_or(track.h);
     if h < SCROLL_MIN_THUMB_H {
         h = SCROLL_MIN_THUMB_H;
     }
@@ -160,7 +162,10 @@ pub fn handle_v_scrollbar_event(
                 let movable = (track.h - thumb.h).max(1);
                 let dy = pos.y - state.drag_anchor_y;
                 let delta = dy.saturating_mul(max_off) / movable;
-                let new_offset = state.drag_start_offset.saturating_add(delta).clamp(0, max_off);
+                let new_offset = state
+                    .drag_start_offset
+                    .saturating_add(delta)
+                    .clamp(0, max_off);
                 if new_offset != state.offset {
                     state.offset = new_offset;
                     changed = true;
@@ -220,7 +225,13 @@ pub fn handle_v_scrollbar_event(
 
         UiEvent::MouseWheel { pos, delta } => {
             if host_rect.contains(pos) {
-                let step = if delta > 0 { -24 } else if delta < 0 { 24 } else { 0 };
+                let step = if delta > 0 {
+                    -24
+                } else if delta < 0 {
+                    24
+                } else {
+                    0
+                };
                 if step != 0 {
                     state.scroll_pixels(viewport_h, content_h, step);
                     return true;

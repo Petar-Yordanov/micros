@@ -75,7 +75,12 @@ impl Window {
 
     pub fn maximize_button_rect(&self) -> Rect {
         let close = self.close_button_rect();
-        Rect::new(close.x - WIN_BTN_GAP - WIN_BTN_W, close.y, WIN_BTN_W, WIN_BTN_H)
+        Rect::new(
+            close.x - WIN_BTN_GAP - WIN_BTN_W,
+            close.y,
+            WIN_BTN_W,
+            WIN_BTN_H,
+        )
     }
 
     pub fn minimize_button_rect(&self) -> Rect {

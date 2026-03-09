@@ -1,14 +1,16 @@
 extern crate alloc;
 
 use crate::arch::x86_64::descriptors::gdt;
-use micros_abi::errno;
-use micros_abi::types::{ProcInfo, ProcListEntry, ProcSpawnArgs};
 use crate::kernel::exec::exec_impl::load_user_elf_into;
-use crate::kernel::mm::aspace::address_space::{new_user_address_space, AddressSpace, KERNEL_ASPACE};
+use crate::kernel::mm::aspace::address_space::{
+    new_user_address_space, AddressSpace, KERNEL_ASPACE,
+};
 use crate::kernel::mm::aspace::user_copy::copy_to_user;
 use crate::kernel::sched::proc as kproc;
 use crate::kernel::sched::task;
 use crate::kernel::sched::task::{TaskKind, TaskState, TrapFrame};
+use micros_abi::errno;
+use micros_abi::types::{ProcInfo, ProcListEntry, ProcSpawnArgs};
 
 use super::util::{copy_user_str, copy_user_struct};
 
@@ -256,7 +258,9 @@ pub(super) fn sys_proc_spawn(args_ptr: u64) -> i64 {
     }
 
     let caller_aspace = AddressSpace::from_current();
-    unsafe { KERNEL_ASPACE.get().unwrap().activate(); }
+    unsafe {
+        KERNEL_ASPACE.get().unwrap().activate();
+    }
 
     let pid = kproc::alloc_pid();
 
@@ -268,8 +272,14 @@ pub(super) fn sys_proc_spawn(args_ptr: u64) -> i64 {
     let loaded = match load_user_elf_into(&aspace, &path) {
         Ok(v) => v,
         Err(e) => {
-            crate::ksprintln!("[proc] spawn load_user_elf_into failed: {:?} path={}", e, path);
-            unsafe { caller_aspace.activate(); }
+            crate::ksprintln!(
+                "[proc] spawn load_user_elf_into failed: {:?} path={}",
+                e,
+                path
+            );
+            unsafe {
+                caller_aspace.activate();
+            }
             return -errno::EINVAL;
         }
     };
@@ -279,10 +289,21 @@ pub(super) fn sys_proc_spawn(args_ptr: u64) -> i64 {
     let ss = (udata.0 | 3) as u64;
 
     let initial_tf = TrapFrame {
-        r15: 0, r14: 0, r13: 0, r12: 0,
-        r11: 0, r10: 0, r9: 0,  r8: 0,
-        rsi: 0, rdi: 0, rbp: 0,
-        rdx: 0, rcx: 0, rbx: 0, rax: 0,
+        r15: 0,
+        r14: 0,
+        r13: 0,
+        r12: 0,
+        r11: 0,
+        r10: 0,
+        r9: 0,
+        r8: 0,
+        rsi: 0,
+        rdi: 0,
+        rbp: 0,
+        rdx: 0,
+        rcx: 0,
+        rbx: 0,
+        rax: 0,
 
         rip: loaded.entry,
         cs,
@@ -306,7 +327,9 @@ pub(super) fn sys_proc_spawn(args_ptr: u64) -> i64 {
         });
     }
 
-    unsafe { caller_aspace.activate(); }
+    unsafe {
+        caller_aspace.activate();
+    }
 
     pid as i64
 }

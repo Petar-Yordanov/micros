@@ -1,5 +1,5 @@
 use crate::canvas::Canvas;
-use font8x8::{BASIC_FONTS, UnicodeFonts};
+use font8x8::{UnicodeFonts, BASIC_FONTS};
 
 pub const CHAR_W: i32 = 8;
 pub const CHAR_H: i32 = 8;

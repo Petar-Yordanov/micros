@@ -41,7 +41,12 @@ impl TableViewState {
 }
 
 fn header_rect(rect: Rect) -> Rect {
-    Rect::new(rect.x + 1, rect.y + 1, rect.w - SCROLLBAR_W - 2, TABLE_HEADER_H)
+    Rect::new(
+        rect.x + 1,
+        rect.y + 1,
+        rect.w - SCROLLBAR_W - 2,
+        TABLE_HEADER_H,
+    )
 }
 
 fn rows_rect(rect: Rect) -> Rect {
@@ -127,8 +132,7 @@ pub fn handle_table_view_event(
 ) -> bool {
     let body = rows_rect(rect);
     let content_h = (rows_len as i32).saturating_mul(TABLE_ROW_H);
-    let mut changed =
-        handle_v_scrollbar_event(rect, &mut state.scroll, body.h, content_h, ev);
+    let mut changed = handle_v_scrollbar_event(rect, &mut state.scroll, body.h, content_h, ev);
 
     match *ev {
         UiEvent::MouseMove { pos } => {

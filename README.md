@@ -228,7 +228,7 @@ make run FS=ext2
   - [x] VFS
   - [x] Time/date syscall support
 
-- [x] **Shell / Apps**
+- [x] **Apps**
   - [x] File explorer
   - [x] Task manager
   - [x] Clock

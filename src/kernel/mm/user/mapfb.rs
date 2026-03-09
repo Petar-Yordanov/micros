@@ -2,6 +2,7 @@ use x86_64::{PhysAddr, VirtAddr};
 
 use crate::kernel::mm::map::mapper as page;
 use crate::kernel::mm::map::mapper::Prot;
+use micros_abi::errno;
 
 const USER_FB_BASE: u64 = 0x0000_6000_0000_0000;
 
@@ -22,7 +23,7 @@ fn user_rw_prot() -> Prot {
 
 pub fn map_framebuffer_user(fb_phys: u64, fb_len: u64) -> Result<u64, i64> {
     if fb_phys == 0 || fb_len == 0 {
-        return Err(-19); // -ENODEV (TODO: Substitute with micros_abi errno values)
+        return Err(-errno::ENODEV);
     }
 
     let page_sz = 4096u64;
@@ -39,7 +40,7 @@ pub fn map_framebuffer_user(fb_phys: u64, fb_len: u64) -> Result<u64, i64> {
         let pa = PhysAddr::new(phys_start + (i as u64) * page_sz);
         let pf = x86_64::structures::paging::PhysFrame::containing_address(pa);
 
-        page::map_fixed(va, pf, prot).map_err(|_| -12 /* -ENOMEM */)?; // (TODO: Substitute with micros_abi errno values)
+        page::map_fixed(va, pf, prot).map_err(|_| -errno::ENOMEM)?;
         va += page_sz;
     }
 

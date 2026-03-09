@@ -1,10 +1,10 @@
+use crate::alloc::string::ToString;
+use crate::app::App;
 use libui::canvas::Canvas;
 use libui::color::{BUTTON_BORDER, PANEL, TEXT_DIM};
 use libui::event::{CursorKind, UiEvent};
 use libui::geom::{Point, Rect};
 use libui::text::{draw_text, measure_text};
-use crate::alloc::string::ToString;
-use crate::app::App;
 
 const FACE_BG: u32 = 0x00F2F2F2;
 const FACE_BORDER: u32 = 0x00282828;
@@ -42,7 +42,14 @@ impl App for ClockApp {
         let header = Rect::new(outer.x + 8, outer.y + 6, outer.w - 16, 14);
         let date_box = Rect::new(outer.x + 24, outer.bottom() - 34, outer.w - 48, 22);
 
-        draw_text(canvas, header.x, header.y, TEXT_DIM, None, "Current local time");
+        draw_text(
+            canvas,
+            header.x,
+            header.y,
+            TEXT_DIM,
+            None,
+            "Current local time",
+        );
 
         let date_str = match rlibc::time::wall_time() {
             Ok(ts) => {

@@ -221,7 +221,8 @@ impl BootConsole {
         }
 
         let mut label_buf = [0u8; 4];
-        let label = super::tags::progress_label(self.progress_done, self.progress_total, &mut label_buf);
+        let label =
+            super::tags::progress_label(self.progress_done, self.progress_total, &mut label_buf);
 
         let text_x = x + (w.saturating_sub(label.len() * FONT_W)) / 2;
         let text_y = y + (h.saturating_sub(8)) / 2;

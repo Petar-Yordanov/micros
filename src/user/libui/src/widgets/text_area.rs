@@ -110,7 +110,11 @@ pub fn draw_text_area(canvas: &mut Canvas, rect: Rect, state: &TextAreaState) {
     canvas.fill_rect(rect, INPUT_BG);
     canvas.stroke_rect(
         rect,
-        if state.focused { INPUT_FOCUS } else { INPUT_BORDER },
+        if state.focused {
+            INPUT_FOCUS
+        } else {
+            INPUT_BORDER
+        },
     );
 
     let content = content_rect(rect);
@@ -129,10 +133,7 @@ pub fn draw_text_area(canvas: &mut Canvas, rect: Rect, state: &TextAreaState) {
     if state.focused {
         let caret_y = (content.y + content_h - state.scroll.offset - 2).min(content.bottom() - 2);
         if caret_y >= content.y {
-            canvas.fill_rect(
-                Rect::new(content.x + 1, caret_y, 1, CHAR_H),
-                INPUT_CURSOR,
-            );
+            canvas.fill_rect(Rect::new(content.x + 1, caret_y, 1, CHAR_H), INPUT_CURSOR);
         }
     }
 
@@ -145,8 +146,7 @@ pub fn handle_text_area_event(rect: Rect, state: &mut TextAreaState, ev: &UiEven
     let viewport_h = content.h;
     let content_h = count_lines(&state.text).saturating_mul(line_h);
 
-    let mut changed =
-        handle_v_scrollbar_event(rect, &mut state.scroll, viewport_h, content_h, ev);
+    let mut changed = handle_v_scrollbar_event(rect, &mut state.scroll, viewport_h, content_h, ev);
 
     match *ev {
         UiEvent::MouseDown {
@@ -158,34 +158,32 @@ pub fn handle_text_area_event(rect: Rect, state: &mut TextAreaState, ev: &UiEven
             changed |= old != state.focused;
         }
 
-        UiEvent::KeyDown { code } if state.focused => {
-            match code {
-                14 => {
-                    if !state.text.is_empty() {
-                        state.text.pop();
-                        changed = true;
-                    }
-                }
-                28 => {
-                    state.text.push('\n');
+        UiEvent::KeyDown { code } if state.focused => match code {
+            14 => {
+                if !state.text.is_empty() {
+                    state.text.pop();
                     changed = true;
-                }
-                103 => {
-                    state.scroll.scroll_lines(viewport_h, content_h, -1, line_h);
-                    changed = true;
-                }
-                108 => {
-                    state.scroll.scroll_lines(viewport_h, content_h, 1, line_h);
-                    changed = true;
-                }
-                _ => {
-                    if let Some(ch) = keycode_to_char(code) {
-                        state.text.push(ch);
-                        changed = true;
-                    }
                 }
             }
-        }
+            28 => {
+                state.text.push('\n');
+                changed = true;
+            }
+            103 => {
+                state.scroll.scroll_lines(viewport_h, content_h, -1, line_h);
+                changed = true;
+            }
+            108 => {
+                state.scroll.scroll_lines(viewport_h, content_h, 1, line_h);
+                changed = true;
+            }
+            _ => {
+                if let Some(ch) = keycode_to_char(code) {
+                    state.text.push(ch);
+                    changed = true;
+                }
+            }
+        },
 
         _ => {}
     }

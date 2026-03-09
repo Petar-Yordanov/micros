@@ -584,11 +584,18 @@ impl Desktop {
             }
         }
 
-        if old_close != self.close_hover || old_min != self.minimize_hover || old_max != self.maximize_hover {
+        if old_close != self.close_hover
+            || old_min != self.minimize_hover
+            || old_max != self.maximize_hover
+        {
             if let Some(i) = old_close.or(old_min).or(old_max) {
                 self.mark_dirty_rect(self.button_damage_rect_for(i));
             }
-            if let Some(i) = self.close_hover.or(self.minimize_hover).or(self.maximize_hover) {
+            if let Some(i) = self
+                .close_hover
+                .or(self.minimize_hover)
+                .or(self.maximize_hover)
+            {
                 self.mark_dirty_rect(self.button_damage_rect_for(i));
             }
         }
@@ -755,12 +762,10 @@ impl Desktop {
                         }
                         WindowHit::Client => {
                             let local = Self::client_local_point(&self.windows[idx], pos);
-                            changed |= self.windows[idx]
-                                .app
-                                .handle_event(&UiEvent::MouseDown {
-                                    pos: local,
-                                    button: MouseButton::Left,
-                                });
+                            changed |= self.windows[idx].app.handle_event(&UiEvent::MouseDown {
+                                pos: local,
+                                button: MouseButton::Left,
+                            });
                         }
                         WindowHit::None => {}
                     }
@@ -812,7 +817,9 @@ impl Desktop {
 
                 if let Some(press) = self.close_press.take() {
                     if press.window_idx < self.windows.len()
-                        && self.windows[press.window_idx].close_button_rect().contains(pos)
+                        && self.windows[press.window_idx]
+                            .close_button_rect()
+                            .contains(pos)
                     {
                         self.close_window(press.window_idx);
                         return;
@@ -824,7 +831,9 @@ impl Desktop {
 
                 if let Some(press) = self.minimize_press.take() {
                     if press.window_idx < self.windows.len()
-                        && self.windows[press.window_idx].minimize_button_rect().contains(pos)
+                        && self.windows[press.window_idx]
+                            .minimize_button_rect()
+                            .contains(pos)
                     {
                         self.minimize_window(press.window_idx);
                         return;
@@ -836,7 +845,9 @@ impl Desktop {
 
                 if let Some(press) = self.maximize_press.take() {
                     if press.window_idx < self.windows.len()
-                        && self.windows[press.window_idx].maximize_button_rect().contains(pos)
+                        && self.windows[press.window_idx]
+                            .maximize_button_rect()
+                            .contains(pos)
                     {
                         self.toggle_maximize_window(press.window_idx);
                         return;
@@ -884,12 +895,10 @@ impl Desktop {
                         && self.windows[idx].contains_client(pos)
                     {
                         let local = Self::client_local_point(&self.windows[idx], pos);
-                        changed |= self.windows[idx]
-                            .app
-                            .handle_event(&UiEvent::MouseUp {
-                                pos: local,
-                                button: MouseButton::Left,
-                            });
+                        changed |= self.windows[idx].app.handle_event(&UiEvent::MouseUp {
+                            pos: local,
+                            button: MouseButton::Left,
+                        });
                     }
                 }
             }
@@ -916,7 +925,9 @@ impl Desktop {
             UiEvent::KeyDown { code } => {
                 if let Some(idx) = self.focused {
                     if idx < self.windows.len() && !self.windows[idx].minimized {
-                        changed |= self.windows[idx].app.handle_event(&UiEvent::KeyDown { code });
+                        changed |= self.windows[idx]
+                            .app
+                            .handle_event(&UiEvent::KeyDown { code });
                     }
                 }
             }
