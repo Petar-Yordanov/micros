@@ -205,12 +205,44 @@ impl Ext2 {
     }
 
     fn read_block(&self, block: u32, out: &mut [u8]) -> Result<(), Ext2Err> {
-        debug_assert_eq!(out.len(), self.block_size as usize);
+        if out.len() != self.block_size as usize {
+            ksprintln!(
+                "[ext2][ERR] read_block size mismatch: block={} got={} want={}",
+                block,
+                out.len(),
+                self.block_size
+            );
+            return Err(Ext2Err::BadSuperblock);
+        }
+
+        ksprintln!(
+            "[ext2][io] read_block block={} off={:#x} len={}",
+            block,
+            (block as u64) * (self.block_size as u64),
+            out.len()
+        );
+
         self.read_exact((block as u64) * (self.block_size as u64), out)
     }
 
     fn write_block(&self, block: u32, src: &[u8]) -> Result<(), Ext2Err> {
-        debug_assert_eq!(src.len(), self.block_size as usize);
+        if src.len() != self.block_size as usize {
+            ksprintln!(
+                "[ext2][ERR] write_block size mismatch: block={} got={} want={}",
+                block,
+                src.len(),
+                self.block_size
+            );
+            return Err(Ext2Err::BadSuperblock);
+        }
+
+        ksprintln!(
+            "[ext2][io] write_block block={} off={:#x} len={}",
+            block,
+            (block as u64) * (self.block_size as u64),
+            src.len()
+        );
+
         self.write_exact((block as u64) * (self.block_size as u64), src)
     }
 
@@ -1029,6 +1061,7 @@ impl Ext2 {
         data: &[u8],
     ) -> Result<(), Ext2Err> {
         if data.is_empty() {
+            ksprintln!("[ext2][append] ino={} empty append, nothing to do", ino);
             return Ok(());
         }
 
@@ -1041,22 +1074,67 @@ impl Ext2 {
             blocks_total = 1;
         }
         if blocks_total > 12 {
+            ksprintln!(
+                "[ext2][append][ERR] ino={} unsupported blocks_total={} cur_size={} add={} bs={}",
+                ino,
+                blocks_total,
+                cur_size,
+                data.len(),
+                bs
+            );
             return Err(Ext2Err::Unsupported);
         }
+
+        ksprintln!(
+            "[ext2][append] ino={} cur_size={} add={} bs={}",
+            ino,
+            cur_size,
+            data.len(),
+            bs
+        );
+        ksprintln!(
+            "[ext2][append] ino={} need_total={} blocks_total={}",
+            ino,
+            need_total,
+            blocks_total
+        );
 
         let mut raw = self.read_inode_mutable(ino)?;
         let mut blkptrs = Self::inode_get_block_ptrs(&raw);
 
-        let _have_blocks = (cur + bs - 1) / bs;
+        let have_blocks = (cur + bs - 1) / bs;
+        ksprintln!(
+            "[ext2][append] ino={} have_blocks={} initial_ptrs=[{},{},{},{},{},{},{},{},{},{},{},{}]",
+            ino,
+            have_blocks,
+            blkptrs[0],
+            blkptrs[1],
+            blkptrs[2],
+            blkptrs[3],
+            blkptrs[4],
+            blkptrs[5],
+            blkptrs[6],
+            blkptrs[7],
+            blkptrs[8],
+            blkptrs[9],
+            blkptrs[10],
+            blkptrs[11],
+        );
 
         for i in 0..blocks_total {
+            ksprintln!("[ext2][append] blkptr[{}]={}", i, blkptrs[i]);
+
             if blkptrs[i] == 0 {
                 let nb = self.alloc_block_group0()?;
+                ksprintln!("[ext2][append] alloc new block for index {} -> {}", i, nb);
+
                 blkptrs[i] = nb;
                 Self::inode_set_block_ptr(&mut raw, i, nb);
 
                 let mut z = vec![0u8; bs];
                 z.fill(0);
+
+                ksprintln!("[ext2][append] zero-init block {}", nb);
                 self.write_block(nb, &z)?;
             }
         }
@@ -1067,18 +1145,52 @@ impl Ext2 {
         while write_off < data.len() {
             let bi = file_off / bs;
             let in_blk = file_off % bs;
+
+            ksprintln!(
+                "[ext2][append] write_off={} file_off={} bi={} in_blk={}",
+                write_off,
+                file_off,
+                bi,
+                in_blk
+            );
+
+            if bi >= blkptrs.len() {
+                ksprintln!(
+                    "[ext2][append][ERR] bi out of range: bi={} blkptrs_len={}",
+                    bi,
+                    blkptrs.len()
+                );
+                return Err(Ext2Err::Unsupported);
+            }
+
             let blk = blkptrs[bi];
+            ksprintln!("[ext2][append] selected blkptr[{}]={}", bi, blk);
+
             if blk == 0 {
+                ksprintln!(
+                    "[ext2][append][ERR] blkptr[{}] is zero during append",
+                    bi
+                );
                 return Err(Ext2Err::BadSuperblock);
             }
 
             let mut buf = vec![0u8; bs];
+            ksprintln!("[ext2][append] read block {}", blk);
             self.read_block(blk, &mut buf)?;
 
             let space = bs - in_blk;
             let take = min(space, data.len() - write_off);
+
+            ksprintln!(
+                "[ext2][append] patch block {} at off {} take {}",
+                blk,
+                in_blk,
+                take
+            );
+
             buf[in_blk..in_blk + take].copy_from_slice(&data[write_off..write_off + take]);
 
+            ksprintln!("[ext2][append] write block {}", blk);
             self.write_block(blk, &buf)?;
 
             write_off += take;
@@ -1086,12 +1198,25 @@ impl Ext2 {
         }
 
         let new_size = (cur + data.len()) as u32;
+        ksprintln!(
+            "[ext2][append] ino={} final new_size={}",
+            ino,
+            new_size
+        );
         Self::inode_set_size(&mut raw, new_size);
 
         let sectors = ((blocks_total * bs) as u32 + 511) / 512;
+        ksprintln!(
+            "[ext2][append] ino={} final sectors512={}",
+            ino,
+            sectors
+        );
         Self::inode_set_blocks_512(&mut raw, sectors);
 
+        ksprintln!("[ext2][append] write inode {}", ino);
         self.write_inode_raw(ino, &raw)?;
+
+        ksprintln!("[ext2][append] ino={} done", ino);
         Ok(())
     }
 }
