@@ -2,9 +2,12 @@
 resolver = "2"
 members = [
   "rlibc",
+  "libui",
   "init",
   "wm",
   "apps/hello",
+  "apps/ipc_cli",
+  "apps/ipc_srv",
 ]
 
 default-members = [
@@ -16,8 +19,7 @@ default-members = [
 [workspace.dependencies]
 micros-abi = { path = "../../crates/abi" }
 
-[profile.dev]
-panic = "abort"
-
 [profile.release]
 panic = "abort"
+lto = true
+codegen-units = 1

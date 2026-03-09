@@ -22,6 +22,12 @@ pub const SYS_PROC_SPAWN: u64 = 23;
 pub const SYS_PROC_WAIT: u64 = 24;
 pub const SYS_PROC_KILL: u64 = 25;
 pub const SYS_PROC_LIST: u64 = 26;
+pub const SYS_SLEEP_MS: u64 = 27;
+pub const SYS_PROC_INFO: u64 = 28;
+
+// RTC
+pub const SYS_TIME_WALL: u64 = 29;
+pub const SYS_TIME_UPTIME: u64 = 33;
 
 // Debug logs
 pub const SYS_LOG: u64 = 100;
@@ -35,3 +41,6 @@ pub const SYS_SHM_CREATE: u64 = 40;
 pub const SYS_SHM_MAP: u64 = 41;
 
 pub const SYS_EXEC: u64 = 42;
+
+// Power
+pub const SYS_POWER: u64 = 34;

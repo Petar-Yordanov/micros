@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 micros-abi = { workspace = true }
 rlibc = { path = "../rlibc" }
+font8x8 = { version = "0.3", default-features = false, features = ["unicode"] }

@@ -6,9 +6,6 @@ edition = "2021"
 [dependencies]
 micros-abi = { workspace = true }
 rlibc = { path = "../rlibc" }
-
-[profile.dev]
-panic = "abort"
-
-[profile.release]
-panic = "abort"
+libui = { path = "../libui" }
+libm = "0.2"
+font8x8 = { version = "0.3", default-features = false }

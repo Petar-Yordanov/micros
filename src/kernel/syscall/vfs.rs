@@ -20,12 +20,12 @@ pub(super) fn sys_vfs_read(args_ptr: u64) -> i64 {
         Err(e) => return e,
     };
 
-    let path = match copy_user_str(args.pathPtr, args.pathLen) {
+    let path = match copy_user_str(args.path_ptr, args.path_len) {
         Ok(s) => s,
         Err(e) => return e,
     };
 
-    if args.bufPtr == 0 {
+    if args.buf_ptr == 0 {
         return -errno::EFAULT;
     }
 
@@ -38,13 +38,13 @@ pub(super) fn sys_vfs_read(args_ptr: u64) -> i64 {
         Err(e) => return vfs_err_to_errno(e),
     };
 
-    let to_copy = min(args.bufLen as usize, data.len());
+    let to_copy = min(args.buf_len as usize, data.len());
     if to_copy == 0 {
         return 0;
     }
 
     unsafe {
-        if copy_to_user(args.bufPtr as *mut u8, data.as_ptr(), to_copy).is_err() {
+        if copy_to_user(args.buf_ptr as *mut u8, data.as_ptr(), to_copy).is_err() {
             return -errno::EFAULT;
         }
     }
@@ -58,12 +58,12 @@ pub(super) fn sys_vfs_write(args_ptr: u64) -> i64 {
         Err(e) => return e,
     };
 
-    let path = match copy_user_str(args.pathPtr, args.pathLen) {
+    let path = match copy_user_str(args.path_ptr, args.path_len) {
         Ok(s) => s,
         Err(e) => return e,
     };
 
-    if args.bufPtr == 0 {
+    if args.buf_ptr == 0 {
         return -errno::EFAULT;
     }
 
@@ -71,15 +71,15 @@ pub(super) fn sys_vfs_write(args_ptr: u64) -> i64 {
         return -errno::EINVAL;
     }
 
-    if args.bufLen > (1024 * 1024) {
+    if args.buf_len > (1024 * 1024) {
         return -errno::EINVAL;
     }
 
-    let mut data = Vec::<u8>::with_capacity(args.bufLen as usize);
-    unsafe { data.set_len(args.bufLen as usize) };
+    let mut data = Vec::<u8>::with_capacity(args.buf_len as usize);
+    unsafe { data.set_len(args.buf_len as usize) };
 
     unsafe {
-        if copy_from_user(data.as_mut_ptr(), args.bufPtr as *const u8, data.len()).is_err() {
+        if copy_from_user(data.as_mut_ptr(), args.buf_ptr as *const u8, data.len()).is_err() {
             return -errno::EFAULT;
         }
     }
@@ -96,12 +96,12 @@ pub(super) fn sys_vfs_list(args_ptr: u64) -> i64 {
         Err(e) => return e,
     };
 
-    let path = match copy_user_str(args.pathPtr, args.pathLen) {
+    let path = match copy_user_str(args.path_ptr, args.path_len) {
         Ok(s) => s,
         Err(e) => return e,
     };
 
-    if args.outPtr == 0 {
+    if args.out_ptr == 0 {
         return -errno::EFAULT;
     }
 
@@ -116,13 +116,13 @@ pub(super) fn sys_vfs_list(args_ptr: u64) -> i64 {
         out.push(b'\n');
     }
 
-    if out.len() > args.outLen as usize {
+    if out.len() > args.out_len as usize {
         return -errno::EINVAL;
     }
 
     if !out.is_empty() {
         unsafe {
-            if copy_to_user(args.outPtr as *mut u8, out.as_ptr(), out.len()).is_err() {
+            if copy_to_user(args.out_ptr as *mut u8, out.as_ptr(), out.len()).is_err() {
                 return -errno::EFAULT;
             }
         }
@@ -132,42 +132,54 @@ pub(super) fn sys_vfs_list(args_ptr: u64) -> i64 {
 }
 
 pub(super) fn sys_vfs_mkdir(path_ptr: u64, path_len: u64) -> i64 {
+    use x86_64::instructions::interrupts;
+
+    crate::ksprintln!("[sys_vfs_mkdir] enter path_ptr={:#x} path_len={}", path_ptr, path_len);
+
     let path = match copy_user_str(path_ptr, path_len) {
         Ok(s) => s,
         Err(e) => return e,
     };
 
-    match vfs_ops::vfs_mkdir_p(&path) {
+    crate::ksprintln!("[sys_vfs_mkdir] path='{}'", path);
+    crate::ksprintln!("[sys_vfs_mkdir] before vfs_mkdir_p");
+
+    let r = interrupts::without_interrupts(|| vfs_ops::vfs_mkdir_p(&path));
+
+    crate::ksprintln!("[sys_vfs_mkdir] after vfs_mkdir_p -> {:?}", r);
+
+    match r {
         Ok(()) => 0,
         Err(e) => vfs_err_to_errno(e),
     }
 }
 
 pub(super) fn sys_vfs_mount(args_ptr: u64) -> i64 {
+    use x86_64::instructions::interrupts;
+
     let args: VfsMountArgs = match copy_user_struct(args_ptr) {
         Ok(v) => v,
         Err(e) => return e,
     };
 
-    let mp = match copy_user_str(args.mountPtr, args.mountLen) {
+    let mp = match copy_user_str(args.mount_ptr, args.mount_len) {
         Ok(s) => s,
         Err(e) => return e,
     };
 
-    // only init can mount
     let pid = crate::kernel::sched::proc::current_pid();
     if pid != Some(1) && pid != Some(0) {
         return -errno::EINVAL;
     }
 
     let fs = args.fs;
-    let off = args.baseOffBytes;
+    let off = args.base_off_bytes;
 
-    let r = match fs {
+    let r = interrupts::without_interrupts(|| match fs {
         x if x == (VfsMountFs::Fat32 as u32) => vfs_mount::mount_fat32(&mp, off),
         x if x == (VfsMountFs::Ext2 as u32) => vfs_mount::mount_ext2(&mp, off),
-        _ => return -errno::EINVAL,
-    };
+        _ => Err(VfsError::BadPath),
+    });
 
     match r {
         Ok(()) => 0,

@@ -14,8 +14,8 @@ extern "C" fn syscall_dispatch_rust(
     a5: u64,
 ) -> i64 {
     let n = SYSCALL_CNT.fetch_add(1, Ordering::Relaxed);
-    if n < 32 {
-        crate::sprintln!(
+    if n < 30 {
+        crate::ksprintln!(
             "[syscall] #{} nr={} a0={:#x} a1={:#x} a2={:#x} a3={:#x} a4={:#x} a5={:#x}",
             n, nr, a0, a1, a2, a3, a4, a5
         );
@@ -23,14 +23,21 @@ extern "C" fn syscall_dispatch_rust(
     kdispatch::dispatch(nr, a0, a1, a2, a3, a4, a5)
 }
 
+#[inline(always)]
+extern "C" fn syscall_enter_rust() {
+    crate::kernel::sched::task::syscall_enter();
+}
+
+#[inline(always)]
+extern "C" fn syscall_exit_rust() {
+    crate::kernel::sched::task::syscall_exit();
+}
+
 #[unsafe(naked)]
 pub extern "C" fn syscall_entry() {
     core::arch::naked_asm!(
         r#"
-        // CPU pushed on CPL3->CPL0:
-        //   SS, RSP, RFLAGS, CS, RIP
-
-        // Save GPRs we might clobber.
+        // Save original syscall regs
         push r15
         push r14
         push r13
@@ -39,48 +46,51 @@ pub extern "C" fn syscall_entry() {
         push r10
         push r9
         push r8
-        push rdi
         push rsi
+        push rdi
+        push rbp
         push rdx
         push rcx
         push rbx
-        push rbp
+        // DO NOT push rax yet; return value in rax later.
+        push rax
 
-        // 14 pushes = 112 bytes, keeps stack 16-byte aligned for calls.
+        // Mark "in syscall" BEFORE enabling interrupts
+        call {enter}
+        sti
 
-        // Build args for syscall_dispatch_rust(nr, a0..a5)
-        // User ABI for int80:
-        //   rax = nr
-        //   rdi,rsi,rdx,r10,r8,r9 = args
+        // Load nr into rdi
+        mov rdi, [rsp + 0]      // nr
 
-        mov rdi, rax            // nr (1st arg)
+        // Load a0..a4 into regs
+        mov rsi, [rsp + 40]     // a0
+        mov rdx, [rsp + 48]     // a1
+        mov rcx, [rsp + 24]     // a2
+        mov r8,  [rsp + 72]     // a3  (saved r10)
+        mov r9,  [rsp + 56]     // a4  (saved r8)
 
-        // Restore original arg regs from our save area:
-        // Layout at rsp (top):
-        //   rbp rbx rcx rdx rsi rdi r8 r9 r10 r11 r12 r13 r14 r15
-        mov rsi, [rsp + 0x28]   // a0 = saved rdi
-        mov rdx, [rsp + 0x20]   // a1 = saved rsi
-        mov rcx, [rsp + 0x18]   // a2 = saved rdx
-        mov r8,  [rsp + 0x40]   // a3 = saved r10
-        mov r9,  [rsp + 0x30]   // a4 = saved r8
-
-        // 7th arg (a5 = saved r9) goes on stack for SysV.
-        sub rsp, 8
-        mov rax, [rsp + 0x40]   // after sub, old [rsp+0x38] becomes [rsp+0x40]
-        mov [rsp], rax
+        sub rsp, 8              // pad to keep alignment
+        push qword ptr [rsp + 8 + 64]  // a5 (saved r9). Note: +8 because we sub rsp.
 
         call {dispatch}
 
-        add rsp, 8              // pop stack arg
-        // return value already in rax (i64)
+        // Pop a5 + pad
+        add rsp, 16
 
-        // Restore regs
-        pop rbp
+        // Leaving syscall
+        call {exit}
+        cli
+
+        // Restore regs. Keep return value in RAX.
+        // rax are saved on the stack; discard it.
+        add rsp, 8              // drop saved rax
+
         pop rbx
         pop rcx
         pop rdx
-        pop rsi
+        pop rbp
         pop rdi
+        pop rsi
         pop r8
         pop r9
         pop r10
@@ -92,6 +102,8 @@ pub extern "C" fn syscall_entry() {
 
         iretq
         "#,
+        enter = sym syscall_enter_rust,
         dispatch = sym syscall_dispatch_rust,
+        exit = sym syscall_exit_rust,
     );
 }

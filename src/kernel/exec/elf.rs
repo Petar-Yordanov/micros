@@ -1,11 +1,9 @@
 extern crate alloc;
 
-use alloc::vec::Vec;
-
 use x86_64::{
     structures::paging::{
         page_table::PageTableEntry,
-        FrameAllocator, PageTable, PageTableFlags, PhysFrame, Size4KiB,
+        PageTable, PageTableFlags, PhysFrame, Size4KiB,
     },
     PhysAddr, VirtAddr,
 };
@@ -13,14 +11,14 @@ use x86_64::{
 use crate::kernel::mm::aspace::address_space::AddressSpace;
 use crate::kernel::mm::phys::frame;
 use crate::platform::limine::hhdm::HHDM_REQ;
-use crate::sprintln;
+use crate::ksprintln;
 
 #[derive(Debug)]
 pub enum ElfError {
     BadMagic,
     Not64,
     BadPhdr,
-    Unsupported,
+    //Unsupported,
     NoMem,
 }
 
@@ -88,7 +86,12 @@ fn phdr_at(img: &[u8], off: usize) -> Result<Elf64Phdr, ElfError> {
     Ok(unsafe { *(img.as_ptr().add(off) as *const Elf64Phdr) })
 }
 
-fn map_page(aspace: &AddressSpace, va: u64, frame: PhysFrame<Size4KiB>, flags: PageTableFlags) -> Result<(), ElfError> {
+fn map_page(
+    aspace: &AddressSpace,
+    va: u64,
+    frame: PhysFrame<Size4KiB>,
+    flags: PageTableFlags,
+) -> Result<(), ElfError> {
     let off = phys_off();
 
     let pml4_pa = aspace.root.start_address().as_u64();
@@ -102,10 +105,7 @@ fn map_page(aspace: &AddressSpace, va: u64, frame: PhysFrame<Size4KiB>, flags: P
     let p2i = v.p2_index();
     let p1i = v.p1_index();
 
-    fn ensure_table<'a>(
-        off: VirtAddr,
-        ent: &mut PageTableEntry,
-    ) -> Result<&'a mut PageTable, ElfError> {
+    fn ensure_table<'a>(off: VirtAddr, ent: &mut PageTableEntry) -> Result<&'a mut PageTable, ElfError> {
         if ent.is_unused() {
             let new = frame::alloc().ok_or(ElfError::NoMem)?;
             let new_pa = new.start_address().as_u64();
@@ -115,7 +115,9 @@ fn map_page(aspace: &AddressSpace, va: u64, frame: PhysFrame<Size4KiB>, flags: P
             let mut e = PageTableEntry::new();
             e.set_addr(
                 PhysAddr::new(new_pa),
-                PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER_ACCESSIBLE,
+                PageTableFlags::PRESENT
+                    | PageTableFlags::WRITABLE
+                    | PageTableFlags::USER_ACCESSIBLE,
             );
             *ent = e;
         }
@@ -135,6 +137,30 @@ fn map_page(aspace: &AddressSpace, va: u64, frame: PhysFrame<Size4KiB>, flags: P
     Ok(())
 }
 
+fn va_to_pa(aspace: &AddressSpace, va: u64) -> Option<u64> {
+    let off = phys_off();
+    let pml4_pa = aspace.root.start_address().as_u64();
+    let pml4: &PageTable = unsafe { &*((off + pml4_pa).as_ptr()) };
+
+    let v = VirtAddr::new(va);
+    let p4e = pml4[v.p4_index()].frame().ok()?;
+    let p3: &PageTable = unsafe { &*((off + p4e.start_address().as_u64()).as_ptr()) };
+
+    let p3e = p3[v.p3_index()].frame().ok()?;
+    let p2: &PageTable = unsafe { &*((off + p3e.start_address().as_u64()).as_ptr()) };
+
+    let p2e = p2[v.p2_index()].frame().ok()?;
+    let p1: &PageTable = unsafe { &*((off + p2e.start_address().as_u64()).as_ptr()) };
+
+    let pte = &p1[v.p1_index()];
+    let fr = pte.frame().ok()?;
+    Some(fr.start_address().as_u64() + (va & 0xfff))
+}
+
+fn page_mapped(aspace: &AddressSpace, va: u64) -> bool {
+    va_to_pa(aspace, va & !0xfffu64).is_some()
+}
+
 pub fn map_user_zero(aspace: &AddressSpace, va: u64, len: u64, writable: bool) -> Result<(), ElfError> {
     let off = phys_off();
     let start = va & !0xfffu64;
@@ -143,11 +169,13 @@ pub fn map_user_zero(aspace: &AddressSpace, va: u64, len: u64, writable: bool) -
     let mut flags = PageTableFlags::USER_ACCESSIBLE;
     if writable {
         flags |= PageTableFlags::WRITABLE;
-    } else {
-        // If not writable, allow execute by default
     }
 
     for cur in (start..end).step_by(4096) {
+        if page_mapped(aspace, cur) {
+            continue;
+        }
+
         let fr = frame::alloc().ok_or(ElfError::NoMem)?;
         let pa = fr.start_address().as_u64();
         let kva = off + pa;
@@ -161,6 +189,11 @@ pub fn map_user_zero(aspace: &AddressSpace, va: u64, len: u64, writable: bool) -
 
 pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfError> {
     let eh = read_ehdr(img)?;
+    ksprintln!(
+        "[exec] ehdr entry={:#x} phoff={} phentsize={} phnum={}",
+        eh.e_entry, eh.e_phoff, eh.e_phentsize, eh.e_phnum
+    );
+
 
     let phoff = eh.e_phoff as usize;
     let entsz = eh.e_phentsize as usize;
@@ -172,6 +205,8 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
 
     for i in 0..phnum {
         let off = phoff + i * entsz;
+        ksprintln!("[exec] phdr idx={} off={}", i, off);
+
         let ph = phdr_at(img, off)?;
 
         if ph.p_type != PT_LOAD {
@@ -202,6 +237,10 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
         }
 
         for cur in (seg_start..seg_end).step_by(4096) {
+            if page_mapped(aspace, cur) {
+                continue;
+            }
+
             let fr = frame::alloc().ok_or(ElfError::NoMem)?;
             map_page(aspace, cur, fr, flags)?;
 
@@ -211,40 +250,48 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
         }
 
         let file_off = ph.p_offset as usize;
-        let file_end = file_off.checked_add(seg_filesz as usize).ok_or(ElfError::BadPhdr)?;
+        let file_end = file_off
+            .checked_add(seg_filesz as usize)
+            .ok_or(ElfError::BadPhdr)?;
         if file_end > img.len() {
             return Err(ElfError::BadPhdr);
         }
 
         copy_into_user(aspace, seg_va, &img[file_off..file_end])?;
+        let verify_n = core::cmp::min(seg_filesz as usize, 16);
+        if verify_n > 0 {
+            ksprintln!(
+                "[exec] verify seg vaddr={:#x} file_off={:#x} first {} bytes",
+                seg_va,
+                file_off,
+                verify_n
+            );
 
-        sprintln!(
-            "[exec] PT_LOAD vaddr={:#x} filesz={:#x} memsz={:#x} flags={:#x}",
-            seg_va, seg_filesz, seg_memsz, ph.p_flags
+            // bytes from ELF image
+            for i in 0..verify_n {
+                ksprintln!(
+                    "[exec]   src[{}] = {:02x}",
+                    i,
+                    img[file_off + i]
+                );
+            }
+
+            // bytes actually mapped in user memory
+            dump_user_bytes(aspace, seg_va, verify_n);
+        }
+
+        ksprintln!(
+            "[exec] PT_LOAD vaddr={:#x} filesz={:#x} memsz={:#x} flags={:#x} map=[{:#x}..{:#x})",
+            seg_va,
+            seg_filesz,
+            seg_memsz,
+            ph.p_flags,
+            seg_start,
+            seg_end
         );
     }
 
     Ok(eh.e_entry)
-}
-
-fn va_to_pa(aspace: &AddressSpace, va: u64) -> Option<u64> {
-    let off = phys_off();
-    let pml4_pa = aspace.root.start_address().as_u64();
-    let pml4: &PageTable = unsafe { &*((off + pml4_pa).as_ptr()) };
-
-    let v = VirtAddr::new(va);
-    let p4e = pml4[v.p4_index()].frame().ok()?;
-    let p3: &PageTable = unsafe { &* ( (off + p4e.start_address().as_u64()).as_ptr() ) };
-
-    let p3e = p3[v.p3_index()].frame().ok()?;
-    let p2: &PageTable = unsafe { &* ( (off + p3e.start_address().as_u64()).as_ptr() ) };
-
-    let p2e = p2[v.p2_index()].frame().ok()?;
-    let p1: &PageTable = unsafe { &* ( (off + p2e.start_address().as_u64()).as_ptr() ) };
-
-    let pte = &p1[v.p1_index()];
-    let fr = pte.frame().ok()?;
-    Some(fr.start_address().as_u64() + (va & 0xfff))
 }
 
 fn copy_into_user(aspace: &AddressSpace, dst_va: u64, src: &[u8]) -> Result<(), ElfError> {
@@ -259,4 +306,31 @@ fn copy_into_user(aspace: &AddressSpace, dst_va: u64, src: &[u8]) -> Result<(), 
         off += 1;
     }
     Ok(())
+}
+
+fn dump_user_bytes(aspace: &AddressSpace, va: u64, n: usize) {
+    use crate::ksprintln;
+
+    ksprintln!("[exec] dump va={:#x} len={}", va, n);
+
+    let mut i = 0usize;
+    while i < n {
+        let cur_va = va + i as u64;
+        match va_to_pa(aspace, cur_va) {
+            Some(pa) => {
+                let b = unsafe { *((phys_off() + pa).as_ptr::<u8>()) };
+                ksprintln!(
+                    "[exec]   va={:#x} pa={:#x} byte={:02x}",
+                    cur_va,
+                    pa,
+                    b
+                );
+            }
+            None => {
+                ksprintln!("[exec]   va={:#x} unmapped", cur_va);
+                break;
+            }
+        }
+        i += 1;
+    }
 }

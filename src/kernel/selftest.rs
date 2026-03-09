@@ -1,0 +1,161 @@
+extern crate alloc;
+
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
+
+use crate::kernel::mm::map::mapper::{self as page, Prot};
+use crate::kernel::mm::phys::frame;
+use crate::kernel::mm::virt::vmarena;
+use crate::platform::limine::hhdm::HHDM_REQ;
+use x86_64::VirtAddr;
+use crate::ksprintln;
+
+unsafe fn ptr_of_slice(bx: &Box<[u8]>) -> usize {
+    bx.as_ptr() as usize
+}
+
+#[inline(always)]
+fn assert_eq_u64(tag: &str, a: u64, b: u64) {
+    if a != b {
+        panic!("[err] [TEST-FAIL] {}: {:#x} != {:#x}", tag, a, b);
+    }
+}
+
+#[inline(always)]
+fn assert_true(tag: &str, ok: bool) {
+    if !ok {
+        panic!("[err] [TEST-FAIL] {}", tag);
+    }
+}
+
+pub fn test_frames() {
+    ksprintln!("[test] frames");
+    let f0 = frame::alloc().expect("frame alloc 0");
+    let f1 = frame::alloc().expect("frame alloc 1");
+    let f2 = frame::alloc().expect("frame alloc 2");
+
+    let a0 = f0.start_address().as_u64();
+    let a1 = f1.start_address().as_u64();
+    let a2 = f2.start_address().as_u64();
+
+    frame::free(f0);
+    frame::free(f1);
+    frame::free(f2);
+
+    let g0 = frame::alloc().expect("frame re-alloc 0");
+    let g1 = frame::alloc().expect("frame re-alloc 1");
+    let g2 = frame::alloc().expect("frame re-alloc 2");
+
+    assert_eq_u64("frame0 roundtrip", g0.start_address().as_u64(), a0);
+    assert_eq_u64("frame1 roundtrip", g1.start_address().as_u64(), a1);
+    assert_eq_u64("frame2 roundtrip", g2.start_address().as_u64(), a2);
+
+    frame::free(g0);
+    frame::free(g1);
+    frame::free(g2);
+    ksprintln!("[test] frames OK");
+}
+
+pub fn test_paging() {
+    ksprintln!("[test] paging");
+
+    let va = vmarena::alloc().expect("arena va");
+    assert_true("arena gave va", vmarena::is_mapped(va));
+
+    let orig = page::unmap(va).expect("unmap arena page");
+    frame::free(orig);
+    assert_true("va now unmapped", page::translate(va).is_none());
+
+    let f = frame::alloc().expect("frame for map_fixed");
+    page::map_fixed(va, f, Prot::RW).expect("map_fixed");
+
+    let pa = f.start_address();
+    let hhdm = HHDM_REQ.get_response().unwrap().offset();
+    let pa_hhdm = VirtAddr::new(hhdm + pa.as_u64());
+
+    unsafe {
+        core::ptr::write::<u64>(va.as_mut_ptr(), 0xDEADBEEFCAFEBABEu64);
+        let back = core::ptr::read::<u64>(pa_hhdm.as_ptr());
+        assert_eq_u64("roundtrip VA->PA(HHDM)", back, 0xDEADBEEFCAFEBABE);
+    }
+
+    let f_back = page::unmap(va).expect("unmap test page");
+    frame::free(f_back);
+    vmarena::free(va);
+
+    ksprintln!("[test] paging OK");
+}
+
+pub fn test_vmarena() {
+    ksprintln!("[test] vmarena");
+
+    let base1 = vmarena::alloc_n(4).expect("vmarena alloc 4");
+    unsafe {
+        let p0 = base1.as_u64() as *mut u64;
+        core::ptr::write_volatile(p0, 0x1111_2222_3333_4444);
+
+        let plast = (base1.as_u64() + 3 * 4096) as *mut u64;
+        core::ptr::write_volatile(plast, 0xAAAA_BBBB_CCCC_DDDD);
+
+        assert_eq_u64(
+            "vmarena read first",
+            core::ptr::read_volatile(p0),
+            0x1111_2222_3333_4444,
+        );
+        assert_eq_u64(
+            "vmarena read last",
+            core::ptr::read_volatile(plast),
+            0xAAAA_BBBB_CCCC_DDDD,
+        );
+    }
+    vmarena::free_n(base1, 4);
+
+    let base2 = vmarena::alloc_n(4).expect("vmarena realloc 4");
+    assert_eq_u64(
+        "vmarena same base after free",
+        base2.as_u64(),
+        base1.as_u64(),
+    );
+
+    vmarena::free_n(base2, 4);
+    ksprintln!("[test] vmarena OK");
+}
+
+pub fn test_heap() {
+    ksprintln!("[test] heap");
+
+    {
+        let b = Box::new(0x1234_5678u64);
+        assert_eq_u64("heap box", *b, 0x1234_5678);
+        let mut v = Vec::<u64>::with_capacity(1024);
+        for i in 0..1024 {
+            v.push(i as u64);
+        }
+        assert_eq_u64("heap vec len", v.len() as u64, 1024);
+        let s = String::from("hello heap");
+        assert_true("heap string non-empty", !s.is_empty());
+    }
+
+    let a: Box<[u8]> = vec![0u8; 3 * 1024].into_boxed_slice();
+    let b: Box<[u8]> = vec![0u8; 16 * 1024].into_boxed_slice();
+    let c: Box<[u8]> = vec![0u8; 4 * 1024].into_boxed_slice();
+
+    let pb = unsafe { ptr_of_slice(&b) };
+    drop(b);
+
+    let x: Box<[u8]> = vec![0u8; 8 * 1024].into_boxed_slice();
+    let px = unsafe { ptr_of_slice(&x) };
+    assert_true(
+        "heap reused freed middle block",
+        px >= pb && px < (pb + 32 * 1024),
+    );
+
+    drop(a);
+    drop(x);
+    drop(c);
+
+    let big: Box<[u8]> = vec![0u8; 512 * 1024].into_boxed_slice();
+    assert_true("heap big alloc ok", big.len() == 512 * 1024);
+    drop(big);
+
+    ksprintln!("[test] heap OK");
+}

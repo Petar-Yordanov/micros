@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::sprintln;
+use crate::ksprintln;
 use core::ptr::{read_volatile, write_volatile};
 use spin::Once;
 use x86_64::registers::model_specific::Msr;
@@ -29,7 +29,7 @@ pub unsafe fn init(spurious_vec: u8, mmio_mapped_base: Option<*mut u8>) {
             set_tpr_x2(0xFF);
             msr_wr(X2APIC_SVR, (1u64 << 8) | (spurious_vec as u64));
             msr_wr(X2APIC_LVT_TIMER, (1u64 << 16) | 0x20);
-            sprintln!("[APIC] using x2APIC backend");
+            ksprintln!("[APIC] using x2APIC backend");
             ApicState {
                 backend: Backend::X2,
                 mmio_base: 0,
@@ -49,7 +49,7 @@ pub unsafe fn init(spurious_vec: u8, mmio_mapped_base: Option<*mut u8>) {
             mmio_w(mmio_base, REG_SVR, (1 << 8) | (spurious_vec as u32));
             mmio_w(mmio_base, REG_LVT_TIMER, (1 << 16) | 0x20);
 
-            sprintln!(
+            ksprintln!(
                 "[APIC] using xAPIC MMIO backend @ {:?}",
                 mmio_base as *mut u32
             );
@@ -69,7 +69,7 @@ pub unsafe fn start_timer(vector: u8, init_count: u32, periodic: bool) {
             let lvt = (vector as u64) | ((mode as u64) << 17);
             msr_wr(X2APIC_LVT_TIMER, lvt);
             msr_wr(X2APIC_INIT_CNT, init_count as u64);
-            sprintln!(
+            ksprintln!(
                 "[APIC] x2 start: DIV=/16 LVT=0x{:x} INIT_CNT=0x{:x}",
                 lvt,
                 init_count
@@ -82,7 +82,7 @@ pub unsafe fn start_timer(vector: u8, init_count: u32, periodic: bool) {
             let lvt = (vector as u32) | ((mode as u32) << 17);
             mmio_w(base, REG_LVT_TIMER, lvt);
             mmio_w(base, REG_TMRINIT, init_count);
-            sprintln!(
+            ksprintln!(
                 "[APIC] mmio start: DIV=0x3 LVT_TIMER=0x{:x} INIT_CNT=0x{:x}",
                 lvt,
                 init_count
@@ -102,11 +102,11 @@ pub unsafe fn set_tpr(val: u8) {
     match state().backend {
         Backend::X2 => {
             set_tpr_x2(val);
-            sprintln!("[APIC] TPR <= 0x{:02x}", val);
+            ksprintln!("[APIC] TPR <= 0x{:02x}", val);
         }
         Backend::Mmio => {
             mmio_w(state().mmio_base, REG_TPR, val as u32);
-            sprintln!("[APIC] TPR <= 0x{:02x}", val);
+            ksprintln!("[APIC] TPR <= 0x{:02x}", val);
         }
     }
 }
@@ -114,7 +114,7 @@ pub unsafe fn set_tpr(val: u8) {
 pub unsafe fn debug_dump() {
     match state().backend {
         Backend::X2 => {
-            sprintln!("[APIC] x2 dump: (use rdmsr if needed)");
+            ksprintln!("[APIC] x2 dump: (use rdmsr if needed)");
         }
         Backend::Mmio => {
             let base = state().mmio_base;
@@ -124,8 +124,10 @@ pub unsafe fn debug_dump() {
             let div = mmio_r(base, REG_DIV);
             let init = mmio_r(base, REG_TMRINIT);
             let cur = mmio_r(base, REG_TMRCUR);
-            sprintln!("[APIC] mmio dump: SVR=0x{:x} LVT_TIMER=0x{:x} TPR=0x{:x} DIV=0x{:x} INIT=0x{:x} CUR=0x{:x}",
-                      svr,lvt,tpr,div,init,cur);
+            ksprintln!(
+                "[APIC] mmio dump: SVR=0x{:x} LVT_TIMER=0x{:x} TPR=0x{:x} DIV=0x{:x} INIT=0x{:x} CUR=0x{:x}",
+                svr, lvt, tpr, div, init, cur
+            );
         }
     }
 }
@@ -142,7 +144,7 @@ pub unsafe fn probe_timer_countdown(spin: u32) -> (u32, u32) {
         Backend::X2 => 0,
         Backend::Mmio => mmio_r(state().mmio_base, REG_TMRCUR),
     };
-    sprintln!(
+    ksprintln!(
         "[APIC] probe: CUR start=0x{:x} end=0x{:x} (ticking)",
         before,
         after
@@ -155,18 +157,16 @@ const APIC_GLOBAL_ENABLE: u64 = 1 << 11;
 const X2APIC_ENABLE: u64 = 1 << 10;
 
 const X2APIC_BASE: u32 = 0x800;
-const X2APIC_ID: u32 = 0x802;
 const X2APIC_TPR: u32 = 0x808;
 const X2APIC_EOI: u32 = 0x80B;
 const X2APIC_SVR: u32 = 0x80F;
 const X2APIC_LVT_TIMER: u32 = 0x832;
 const X2APIC_INIT_CNT: u32 = 0x838;
-const X2APIC_CUR_CNT: u32 = 0x839;
 const X2APIC_DIV: u32 = 0x83E;
 
 #[inline(always)]
 fn x2apic_supported_by_cpu() -> bool {
-    let r = unsafe { core::arch::x86_64::__cpuid(1) };
+    let r = core::arch::x86_64::__cpuid(1);
     (r.ecx & (1 << 21)) != 0
 }
 
@@ -187,12 +187,6 @@ unsafe fn msr_wr(off: u32, val: u64) {
     Msr::new(X2APIC_BASE + off).write(val)
 }
 
-#[inline(always)]
-unsafe fn msr_rd(off: u32) -> u64 {
-    Msr::new(X2APIC_BASE + off).read()
-}
-
-const REG_ID: usize = 0x020 >> 2;
 const REG_TPR: usize = 0x080 >> 2;
 const REG_EOI: usize = 0x0B0 >> 2;
 const REG_SVR: usize = 0x0F0 >> 2;

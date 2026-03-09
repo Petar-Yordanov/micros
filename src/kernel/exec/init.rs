@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use crate::sprintln;
+use crate::ksprintln;
 use x86_64::VirtAddr;
 
 pub fn spawn_init(kstack_top: VirtAddr) {
@@ -12,11 +12,11 @@ extern "C" fn init_main(_: *mut u8) -> ! {
 
     let path = "/bin/init.elf";
 
-    sprintln!("[init] exec {}", path);
+    ksprintln!("[init] exec {}", path);
 
-    sprintln!("[init] before vfs_list(/bin)");
+    ksprintln!("[init] before vfs_list(/bin)");
     let r = crate::kernel::fs::vfs::ops::vfs_list("/bin");
-    sprintln!("[init] after vfs_list(/bin): {:?}", r.as_ref().map(|v| v.len()));
+    ksprintln!("[init] after vfs_list(/bin): {:?}", r.as_ref().map(|v| v.len()));
 
     crate::kernel::exec::run_user_elf(path, "init-user")
 }

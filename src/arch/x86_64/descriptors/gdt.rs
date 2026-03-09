@@ -24,7 +24,7 @@ static GDT: Once<(GlobalDescriptorTable, Selectors)> = Once::new();
 pub unsafe fn init(kernel_rsp0_top: u64) {
     tss::configure_rsp0_and_ists(kernel_rsp0_top);
 
-    let tss_ref = tss::TSS.get().expect("TSS not initialized");
+    let tss_ref = tss::tss_ref();
 
     let mut tmp = GlobalDescriptorTable::new();
 

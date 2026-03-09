@@ -1,5 +1,5 @@
 use crate::kernel::mm::heap::freelist::Heap;
-use crate::sprintln;
+use crate::ksprintln;
 use core::alloc::{GlobalAlloc, Layout};
 use spin::Mutex;
 
@@ -30,7 +30,7 @@ pub fn init(initial_pages: usize) -> Result<(), &'static str> {
         return Err("initial_pages=0");
     }
 
-    sprintln!(
+    ksprintln!(
         "[HEAP] request {} pages (~{} MiB)",
         initial_pages,
         (initial_pages * 4096) / (1024 * 1024)
@@ -38,7 +38,7 @@ pub fn init(initial_pages: usize) -> Result<(), &'static str> {
 
     let base =
         crate::kernel::mm::virt::vmarena::alloc_n(initial_pages).ok_or("arena alloc failed")?;
-    sprintln!("[HEAP] arena gave base = {:#018x}", base.as_u64());
+    ksprintln!("[HEAP] arena gave base = {:#018x}", base.as_u64());
 
     let start = base.as_u64() as usize;
     let len = initial_pages * 4096;
@@ -48,7 +48,7 @@ pub fn init(initial_pages: usize) -> Result<(), &'static str> {
         h.add_span(start, len);
     }
 
-    sprintln!(
+    ksprintln!(
         "[HEAP] seeded span @ {:#018x} len={} KiB",
         start,
         len / 1024

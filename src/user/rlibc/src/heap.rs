@@ -6,7 +6,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub struct BumpAlloc;
 
-const HEAP_SIZE: usize = 1024 * 1024; // 1 MiB
+const HEAP_SIZE: usize = 16 * 1024 * 1024; // 16 MiB
 #[link_section = ".bss.heap"]
 static mut HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 
@@ -27,8 +27,8 @@ unsafe impl GlobalAlloc for BumpAlloc {
 
             match NEXT.compare_exchange(cur, next, Ordering::SeqCst, Ordering::Relaxed) {
                 Ok(_) => {
-                    let base = unsafe { core::ptr::addr_of_mut!(HEAP) as *mut u8 };
-                    return unsafe { base.add(aligned) };
+                    let base = core::ptr::addr_of_mut!(HEAP) as *mut u8;
+                    return base.add(aligned);
                 }
                 Err(v) => cur = v,
             }

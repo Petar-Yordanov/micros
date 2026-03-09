@@ -16,7 +16,7 @@ pub(super) fn fb_info(out: &mut FbInfo) -> bool {
     let resp = match FRAMEBUFFER_REQ.get_response() {
         Some(r) => r,
         None => {
-            crate::sprintln!("[syscall] fb_info: no framebuffer response from Limine");
+            crate::ksprintln!("[syscall] fb_info: no framebuffer response from Limine");
             return false;
         }
     };
@@ -30,7 +30,7 @@ pub(super) fn fb_info(out: &mut FbInfo) -> bool {
     let fb = match fb_opt {
         Some(f) => f,
         None => {
-            crate::sprintln!("[syscall] fb_info: no framebuffers in response");
+            crate::ksprintln!("[syscall] fb_info: no framebuffers in response");
             return false;
         }
     };
@@ -49,7 +49,7 @@ pub(super) fn sys_fb_info(user_fb_ptr: u64) -> i64 {
         return -errno::EFAULT;
     }
 
-    crate::sprintln!("[syscall] sys_fb_info(user_ptr={:#x})", user_fb_ptr);
+    crate::ksprintln!("[syscall] sys_fb_info(user_ptr={:#x})", user_fb_ptr);
 
     let mut tmp = FbInfo {
         addr: 0,
@@ -63,7 +63,7 @@ pub(super) fn sys_fb_info(user_fb_ptr: u64) -> i64 {
         return -errno::ENODEV;
     }
 
-    crate::sprintln!("[syscall] sys_fb_info: fb={:?}", tmp);
+    crate::ksprintln!("[syscall] sys_fb_info: fb={:?}", tmp);
 
     unsafe {
         if copy_to_user(
@@ -77,12 +77,12 @@ pub(super) fn sys_fb_info(user_fb_ptr: u64) -> i64 {
         }
     }
 
-    crate::sprintln!("[syscall] sys_fb_info: copy_to_user OK");
+    crate::ksprintln!("[syscall] sys_fb_info: copy_to_user OK");
     0
 }
 
 pub(super) fn sys_fb_map() -> i64 {
-    crate::sprintln!("[syscall] sys_fb_map enter");
+    crate::ksprintln!("[syscall] sys_fb_map enter");
 
     let mut fb = FbInfo {
         addr: 0,
@@ -110,7 +110,7 @@ pub(super) fn sys_fb_map() -> i64 {
         fb.addr
     };
 
-    crate::sprintln!(
+    crate::ksprintln!(
         "[syscall] sys_fb_map: fb.addr={:#x} hhdm={:#x} -> phys={:#x} len={:#x}",
         fb.addr,
         hhdm,

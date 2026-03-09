@@ -7,7 +7,7 @@ use alloc::vec;
 use core::cmp::min;
 
 use crate::kernel::drivers::virtio::blk::{read_at, write_at};
-use crate::sprintln;
+use crate::ksprintln;
 
 const SEC: usize = 512;
 
@@ -356,7 +356,7 @@ impl Fat32 {
             root_clus,
         };
 
-        sprintln!(
+        ksprintln!(
             "[fat32] mount: bps={} spc={} rsvd={} nfats={} fatsz={} totsec={} first_data={} clusters={} root_clus={}",
             bps, spc, rsvd, nf, fatsz32, tot, data_start_sec, data_clusters, root_clus
         );
@@ -814,7 +814,7 @@ impl Fat32 {
             raw[11] = 0x0F; // attr
             raw[12] = 0x00; // type
             raw[13] = chk;  // checksum
-            raw[26] = 0x00; // fstClusLO = 0
+            raw[26] = 0x00;
             raw[27] = 0x00;
 
             // Fill all 13 slots with 0xFFFF padding

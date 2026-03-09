@@ -1,9 +1,9 @@
+use spin::Once;
+use x86_64::registers::control::{Cr3, Cr3Flags};
+use x86_64::structures::paging::{PhysFrame, Size4KiB};
+use x86_64::structures::paging::PageTable;
 use crate::platform::limine::hhdm::HHDM_REQ;
-use x86_64::{
-    registers::control::{Cr3, Cr3Flags},
-    structures::paging::{PageTable, PhysFrame, Size4KiB},
-    VirtAddr,
-};
+use x86_64::VirtAddr;
 
 #[derive(Copy, Clone)]
 pub struct AddressSpace {
@@ -12,17 +12,21 @@ pub struct AddressSpace {
 }
 
 impl AddressSpace {
-    #[allow(unused)]
     pub fn from_current() -> Self {
         let (frame, flags) = Cr3::read();
         AddressSpace { root: frame, flags }
     }
 
-    #[allow(unused)]
     pub unsafe fn activate(&self) {
         Cr3::write(self.root, self.flags);
         crate::kernel::mm::map::mapper::reset_for_current_cr3();
     }
+}
+
+pub static KERNEL_ASPACE: Once<AddressSpace> = Once::new();
+
+pub fn init_kernel_aspace_snapshot() {
+    KERNEL_ASPACE.call_once(AddressSpace::from_current);
 }
 
 pub fn new_user_address_space() -> AddressSpace {

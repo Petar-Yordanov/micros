@@ -31,8 +31,8 @@ pub(super) fn sys_log(user_ptr: u64, user_len: u64) -> i64 {
     }
 
     match core::str::from_utf8(&buf) {
-        Ok(s) => crate::sprintln!("[user] {}", s),
-        Err(_) => crate::sprintln!("[user] <non-utf8 {} bytes>", len),
+        Ok(s) => crate::ksprintln!("[user] {}", s),
+        Err(_) => crate::ksprintln!("[user] <non-utf8 {} bytes>", len),
     }
 
     0
