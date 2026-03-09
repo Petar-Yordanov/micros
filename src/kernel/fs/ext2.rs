@@ -435,22 +435,46 @@ impl Ext2 {
 
     fn read_inode_data(&self, ino: u32, max_bytes: usize) -> Result<Vec<u8>, Ext2Err> {
         let (mode, size, blkptrs) = self.inode_mode_size_blocks(ino)?;
+        ksprintln!(
+            "[ext2][read_inode_data] ino={} mode={:#x} size={} max_bytes={}",
+            ino,
+            mode,
+            size,
+            max_bytes
+        );
+
         if !(is_reg(mode) || is_dir(mode)) {
+            ksprintln!("[ext2][read_inode_data] ino={} unsupported mode", ino);
             return Err(Ext2Err::Unsupported);
         }
 
         let want = min(size as usize, max_bytes);
+        ksprintln!("[ext2][read_inode_data] ino={} want={}", ino, want);
+
         if want == 0 {
+            ksprintln!("[ext2][read_inode_data] ino={} empty", ino);
             return Ok(Vec::new());
         }
 
         let bs = self.block_size as usize;
         let blocks_needed = (want + bs - 1) / bs;
+        ksprintln!(
+            "[ext2][read_inode_data] ino={} bs={} blocks_needed={}",
+            ino,
+            bs,
+            blocks_needed
+        );
 
         let mut out = Vec::with_capacity(want);
 
         for file_blk in 0..(blocks_needed as u32) {
             let disk_blk = self.inode_data_block_no(&blkptrs, file_blk)?;
+            ksprintln!(
+                "[ext2][read_inode_data] ino={} file_blk={} -> disk_blk={}",
+                ino,
+                file_blk,
+                disk_blk
+            );
 
             let mut buf = vec![0u8; bs];
             if disk_blk != 0 {
@@ -460,7 +484,22 @@ impl Ext2 {
             }
 
             let take = min(bs, want - out.len());
+            ksprintln!(
+                "[ext2][read_inode_data] ino={} file_blk={} take={} out_before={}",
+                ino,
+                file_blk,
+                take,
+                out.len()
+            );
+
             out.extend_from_slice(&buf[..take]);
+
+            ksprintln!(
+                "[ext2][read_inode_data] ino={} file_blk={} out_after={}",
+                ino,
+                file_blk,
+                out.len()
+            );
 
             if out.len() >= want {
                 break;
@@ -468,6 +507,12 @@ impl Ext2 {
         }
 
         out.truncate(want);
+        ksprintln!(
+            "[ext2][read_inode_data] ino={} done final_len={}",
+            ino,
+            out.len()
+        );
+
         Ok(out)
     }
 
@@ -593,13 +638,50 @@ impl Ext2 {
     }
 
     pub fn read_file(&self, path: &str) -> Result<Vec<u8>, Ext2Err> {
+        ksprintln!("[ext2][read_file] path={}", path);
+
         let ino = self.resolve_inode_ci(path)?;
-        let (mode, size, _blkptrs) = self.inode_mode_size_blocks(ino)?;
+        ksprintln!("[ext2][read_file] resolved ino={}", ino);
+
+        let (mode, size, blkptrs) = self.inode_mode_size_blocks(ino)?;
+        ksprintln!(
+            "[ext2][read_file] ino={} mode={:#x} size={} ptrs=[{},{},{},{},{},{},{},{},{},{},{},{}]",
+            ino,
+            mode,
+            size,
+            blkptrs[0],
+            blkptrs[1],
+            blkptrs[2],
+            blkptrs[3],
+            blkptrs[4],
+            blkptrs[5],
+            blkptrs[6],
+            blkptrs[7],
+            blkptrs[8],
+            blkptrs[9],
+            blkptrs[10],
+            blkptrs[11],
+        );
+
         if !is_reg(mode) {
+            ksprintln!("[ext2][read_file] ino={} not a regular file", ino);
             return Err(Ext2Err::NotFound);
         }
+
         let mut v = self.read_inode_data(ino, size as usize)?;
+        ksprintln!(
+            "[ext2][read_file] ino={} read_inode_data returned len={}",
+            ino,
+            v.len()
+        );
+
         v.truncate(size as usize);
+        ksprintln!(
+            "[ext2][read_file] ino={} final truncated len={}",
+            ino,
+            v.len()
+        );
+
         Ok(v)
     }
 
@@ -1167,10 +1249,7 @@ impl Ext2 {
             ksprintln!("[ext2][append] selected blkptr[{}]={}", bi, blk);
 
             if blk == 0 {
-                ksprintln!(
-                    "[ext2][append][ERR] blkptr[{}] is zero during append",
-                    bi
-                );
+                ksprintln!("[ext2][append][ERR] blkptr[{}] is zero during append", bi);
                 return Err(Ext2Err::BadSuperblock);
             }
 
@@ -1198,19 +1277,11 @@ impl Ext2 {
         }
 
         let new_size = (cur + data.len()) as u32;
-        ksprintln!(
-            "[ext2][append] ino={} final new_size={}",
-            ino,
-            new_size
-        );
+        ksprintln!("[ext2][append] ino={} final new_size={}", ino, new_size);
         Self::inode_set_size(&mut raw, new_size);
 
         let sectors = ((blocks_total * bs) as u32 + 511) / 512;
-        ksprintln!(
-            "[ext2][append] ino={} final sectors512={}",
-            ino,
-            sectors
-        );
+        ksprintln!("[ext2][append] ino={} final sectors512={}", ino, sectors);
         Self::inode_set_blocks_512(&mut raw, sectors);
 
         ksprintln!("[ext2][append] write inode {}", ino);
