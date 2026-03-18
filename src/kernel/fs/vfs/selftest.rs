@@ -8,6 +8,19 @@ use super::error::VfsError;
 use super::mount::{mount_ext2, mount_fat32};
 use super::ops::{vfs_list, vfs_mkdir_p, vfs_read, vfs_write, vfs_write_overwrite};
 
+fn eq_msg_plus_ap(buf: &[u8], msg: &[u8], ap: &[u8]) -> bool {
+    if buf.len() != msg.len() + ap.len() {
+        return false;
+    }
+    if &buf[..msg.len()] != msg {
+        return false;
+    }
+    if &buf[msg.len()..] != ap {
+        return false;
+    }
+    true
+}
+
 fn fat32_vfs_selftest() -> Result<(), VfsError> {
     ksprintln!("[vfs] FAT32 selftest");
 
@@ -25,13 +38,13 @@ fn fat32_vfs_selftest() -> Result<(), VfsError> {
     let ap = b"APPEND!";
     vfs_write("/TestDir/Sub/Note.txt", ap)?;
     match vfs_read("/TestDir/Sub/Note.txt") {
-        Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => ksprintln!("[vfs] append OK"),
+        Ok(buf) if eq_msg_plus_ap(&buf, msg, ap) => ksprintln!("[vfs] append OK"),
         Ok(_) => return Err(VfsError::FsSpecific),
         Err(e) => return Err(e),
     }
 
     match vfs_read("/testdir/sub/note.txt") {
-        Ok(buf) if buf == [msg.as_slice(), ap.as_slice()].concat() => {
+        Ok(buf) if eq_msg_plus_ap(&buf, msg, ap) => {
             ksprintln!("[vfs] case-insensitive lookup OK")
         }
         Ok(_) => ksprintln!("[vfs][WARN] case-insensitive lookup got wrong content"),
@@ -52,26 +65,8 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
     ksprintln!("[vfs] ext2 overwrite OK");
 
     match vfs_read("/TestDir/Sub/Note.txt") {
-        Ok(buf) => {
-            ksprintln!(
-                "[vfs] ext2 first read len={} expected_len={}",
-                buf.len(),
-                msg.len()
-            );
-            for (i, b) in buf.iter().enumerate() {
-                ksprintln!("[vfs] ext2 first read buf[{}]={:#x}", i, *b);
-            }
-            for (i, b) in msg.iter().enumerate() {
-                ksprintln!("[vfs] ext2 first read exp[{}]={:#x}", i, *b);
-            }
-
-            if buf == msg {
-                ksprintln!("[vfs] ext2 readback OK");
-            } else {
-                ksprintln!("[vfs][FAIL] ext2 first read content mismatch");
-                return Err(VfsError::FsSpecific);
-            }
-        }
+        Ok(buf) if buf == msg => ksprintln!("[vfs] ext2 readback OK"),
+        Ok(_) => return Err(VfsError::FsSpecific),
         Err(e) => return Err(e),
     }
 
@@ -80,64 +75,24 @@ fn ext2_vfs_selftest() -> Result<(), VfsError> {
     vfs_write("/TestDir/Sub/Note.txt", ap)?;
     ksprintln!("[vfs] ext2 append returned");
 
-    let expected = [msg.as_slice(), ap.as_slice()].concat();
-    ksprintln!(
-        "[vfs] ext2 read-after-append begin expected_len={}",
-        expected.len()
-    );
-
+    ksprintln!("[vfs] ext2 read-after-append begin");
     match vfs_read("/TestDir/Sub/Note.txt") {
-        Ok(buf) => {
-            ksprintln!(
-                "[vfs] ext2 read-after-append got len={} expected_len={}",
-                buf.len(),
-                expected.len()
-            );
-
-            for (i, b) in buf.iter().enumerate() {
-                ksprintln!("[vfs] ext2 append buf[{}]={:#x}", i, *b);
-            }
-            for (i, b) in expected.iter().enumerate() {
-                ksprintln!("[vfs] ext2 append exp[{}]={:#x}", i, *b);
-            }
-
-            if buf == expected {
-                ksprintln!("[vfs] ext2 append OK");
-            } else {
-                ksprintln!("[vfs][FAIL] ext2 append content mismatch");
-                return Err(VfsError::FsSpecific);
-            }
+        Ok(buf) if eq_msg_plus_ap(&buf, msg, ap) => {
+            ksprintln!("[vfs] ext2 append OK")
         }
+        Ok(_) => return Err(VfsError::FsSpecific),
         Err(e) => return Err(e),
     }
 
-    ksprintln!("[vfs] ext2 ci lookup begin");
+    ksprintln!("[vfs] ext2 ci read begin");
     match vfs_read("/testdir/sub/note.txt") {
-        Ok(buf) => {
-            ksprintln!(
-                "[vfs] ext2 ci read len={} expected_len={}",
-                buf.len(),
-                expected.len()
-            );
-
-            for (i, b) in buf.iter().enumerate() {
-                ksprintln!("[vfs] ext2 ci buf[{}]={:#x}", i, *b);
-            }
-
-            if buf == expected {
-                ksprintln!("[vfs] ext2 case-insensitive lookup OK");
-            } else {
-                ksprintln!("[vfs][FAIL] ext2 ci content mismatch");
-                return Err(VfsError::FsSpecific);
-            }
+        Ok(buf) if eq_msg_plus_ap(&buf, msg, ap) => {
+            ksprintln!("[vfs] ext2 case-insensitive lookup OK")
         }
-        Err(e) => {
-            ksprintln!("[vfs][FAIL] ext2 ci lookup err: {:?}", e);
-            return Err(e);
-        }
+        Ok(_) => ksprintln!("[vfs][WARN] ext2 ci lookup got wrong content"),
+        Err(e) => return Err(e),
     }
 
-    ksprintln!("[vfs] ext2 selftest done");
     Ok(())
 }
 
