@@ -3,7 +3,7 @@ extern crate alloc;
 use alloc::vec::Vec;
 use x86_64::VirtAddr;
 
-use crate::arch::x86_64::descriptors::gdt;
+use crate::arch::x86_64::descriptors::{gdt, tss};
 use crate::kernel::mm::aspace::address_space::{new_user_address_space, AddressSpace};
 use crate::kernel::sched::proc;
 use crate::kernel::sched::task::{self, TrapFrame};
@@ -11,10 +11,8 @@ use crate::ksprintln;
 
 #[derive(Debug)]
 pub enum ExecError {
-    //NotFound,
     BadElf,
     NoMemory,
-    //Unsupported,
     VfsReadFail,
 }
 
@@ -30,6 +28,7 @@ pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUse
     let img: Vec<u8> =
         crate::kernel::fs::vfs::ops::vfs_read(path).map_err(|_| ExecError::VfsReadFail)?;
     ksprintln!("[exec] read {} bytes from {}", img.len(), path);
+
     if img.len() >= 16 {
         ksprintln!(
             "[exec] first16 {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}",
@@ -42,7 +41,6 @@ pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUse
 
     let entry = crate::kernel::exec::elf::load_elf64_user(aspace, &img).map_err(|e| match e {
         crate::kernel::exec::elf::ElfError::NoMem => ExecError::NoMemory,
-        //crate::kernel::exec::elf::ElfError::Unsupported => ExecError::Unsupported,
         _ => ExecError::BadElf,
     })?;
 
@@ -55,6 +53,14 @@ pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUse
 
     let initial_user_rsp = stack_top - 8;
 
+    ksprintln!(
+        "[exec] loaded user elf: entry={:#x} stack=[{:#x}..{:#x}) rsp={:#x}",
+        entry,
+        stack_bottom,
+        stack_top,
+        initial_user_rsp
+    );
+
     Ok(LoadedUserElf {
         entry,
         user_stack_top: initial_user_rsp,
@@ -62,7 +68,7 @@ pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUse
 }
 
 #[inline(never)]
-pub fn enter_user(entry: u64, user_rsp: u64) -> ! {
+pub fn enter_user(aspace: &AddressSpace, entry: u64, user_rsp: u64) -> ! {
     let (ucode, udata) = gdt::user_segments();
     let cs = ucode.0 | 3;
     let ss = udata.0 | 3;
@@ -104,7 +110,12 @@ pub fn enter_user(entry: u64, user_rsp: u64) -> ! {
                 user_rsp,
                 user_ss: ss as u64,
             };
+
+            tss::set_rsp0_top((*cur).kstack_top.as_u64());
         }
+
+        x86_64::instructions::interrupts::disable();
+        aspace.activate();
 
         core::arch::asm!(
             "mov ax, {udata:x}",
@@ -144,28 +155,36 @@ pub fn run_user_elf(path: &str, name: &'static str) -> ! {
         }
     };
 
+    let cur_task = unsafe { task::current_ptr() };
+
     {
         let mut procs = proc::all();
         procs.push(proc::Process {
             pid,
             aspace,
-            kstack_top: VirtAddr::new(0),
-            main_task: unsafe { core::mem::zeroed() },
+            kstack_top: if cur_task.is_null() {
+                VirtAddr::new(0)
+            } else {
+                unsafe { (*cur_task).kstack_top }
+            },
+            main_task: proc::TaskHandle::new(cur_task),
             state: proc::ProcState::Running,
             name: alloc::string::String::from(name),
         });
     }
 
     unsafe {
-        aspace.activate();
-    }
-
-    unsafe {
-        let cur = task::current_ptr();
-        if !cur.is_null() {
-            (*cur).kind = crate::kernel::sched::task::TaskKind::UThread { pid };
+        if !cur_task.is_null() {
+            (*cur_task).kind = crate::kernel::sched::task::TaskKind::UThread { pid };
         }
     }
 
-    enter_user(loaded.entry, loaded.user_stack_top)
+    ksprintln!(
+        "[exec] run_user_elf: pid={} entry={:#x} user_rsp={:#x}",
+        pid,
+        loaded.entry,
+        loaded.user_stack_top
+    );
+
+    enter_user(&aspace, loaded.entry, loaded.user_stack_top)
 }
