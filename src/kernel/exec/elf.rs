@@ -67,7 +67,9 @@ fn read_ehdr(img: &[u8]) -> Result<Elf64Ehdr, ElfError> {
     if img.len() < core::mem::size_of::<Elf64Ehdr>() {
         return Err(ElfError::BadMagic);
     }
-    let eh = unsafe { *(img.as_ptr() as *const Elf64Ehdr) };
+
+    let eh = unsafe { core::ptr::read_unaligned(img.as_ptr() as *const Elf64Ehdr) };
+
     if &eh.e_ident[0..4] != b"\x7fELF" {
         return Err(ElfError::BadMagic);
     }
@@ -75,6 +77,7 @@ fn read_ehdr(img: &[u8]) -> Result<Elf64Ehdr, ElfError> {
     if eh.e_ident[4] != 2 {
         return Err(ElfError::Not64);
     }
+
     Ok(eh)
 }
 
@@ -82,7 +85,9 @@ fn phdr_at(img: &[u8], off: usize) -> Result<Elf64Phdr, ElfError> {
     if off + core::mem::size_of::<Elf64Phdr>() > img.len() {
         return Err(ElfError::BadPhdr);
     }
-    Ok(unsafe { *(img.as_ptr().add(off) as *const Elf64Phdr) })
+
+    let p = unsafe { img.as_ptr().add(off) as *const Elf64Phdr };
+    Ok(unsafe { core::ptr::read_unaligned(p) })
 }
 
 fn map_page(
@@ -276,12 +281,10 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
                 verify_n
             );
 
-            // bytes from ELF image
             for i in 0..verify_n {
                 ksprintln!("[exec]   src[{}] = {:02x}", i, img[file_off + i]);
             }
 
-            // bytes actually mapped in user memory
             dump_user_bytes(aspace, seg_va, verify_n);
         }
 
