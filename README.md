@@ -195,6 +195,7 @@ make run FS=ext2
   - [x] PCI
   - [x] Virtio-blk
   - [x] Virtio-input
+  - [x] Virtio-net
 
 - [x] **Storage / Filesystems**
   - [x] VFS layer
@@ -227,12 +228,26 @@ make run FS=ext2
   - [x] Yield / exec / process
   - [x] VFS
   - [x] Time/date syscall support
+  - [x] Networking
 
 - [x] **Apps**
   - [x] File explorer
   - [x] Task manager
   - [x] Clock
   - [x] Notepad
+  - [x] Browser (HTTP Only)
+
+- [ ] **Networking**
+  - [x] Virtio-net device bring-up
+  - [x] Ethernet frame send/receive
+  - [x] ARP request/reply handling
+  - [x] IPv4 packet parsing/building
+  - [x] ICMPv4 ping / echo handling
+  - [x] DNS lookup
+  - [x] TCP connect / handshake
+  - [x] TCP send/receive byte-stream syscalls
+  - [x] HTTP GET over TCP
+  - [ ] TCP close / teardown cleanup
 
 - [ ] **GUI stack**
   - [x] Single-process UI model

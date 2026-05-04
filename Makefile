@@ -235,6 +235,9 @@ run-just: $(ISO) check-vars
 	        -device virtio-blk-pci,drive=vd0,disable-legacy=on \
 	        -device virtio-keyboard-pci,disable-legacy=on \
 	        -device virtio-mouse-pci,disable-legacy=on \
+			-netdev user,id=net0 \
+			-object filter-dump,id=netdump,netdev=net0,file=net.pcap \
+			-device virtio-net-pci,netdev=net0,disable-legacy=on,mac=52:54:00:12:34:56,csum=off,gso=off,guest_csum=off,guest_tso4=off,guest_tso6=off,guest_ecn=off,host_tso4=off,host_tso6=off,host_ecn=off,mrg_rxbuf=off \
 	        -no-reboot -no-shutdown
 
 .PHONY: clean clean-kernel clean-user clean-iso clean-disk clean-qemu-log

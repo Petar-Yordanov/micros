@@ -34,26 +34,31 @@ fn features_ok(common: *mut VirtioPciCommonCfg) -> bool {
     }
 }
 
-pub fn negotiate_features(common: *mut VirtioPciCommonCfg) -> bool {
+pub fn read_device_features(common: *mut VirtioPciCommonCfg) -> u64 {
+    unsafe {
+        (*common).device_feature_select = 0;
+        let f0 = (*common).device_feature as u64;
+        (*common).device_feature_select = 1;
+        let f1 = (*common).device_feature as u64;
+        f0 | (f1 << 32)
+    }
+}
+
+pub fn negotiate_features_with(common: *mut VirtioPciCommonCfg, wanted: u64) -> Option<u64> {
     unsafe {
         reset_device(common);
         set_status(common, STATUS_ACKNOWLEDGE);
         set_status(common, STATUS_DRIVER);
 
-        (*common).device_feature_select = 0;
-        let f0 = (*common).device_feature as u64;
-        (*common).device_feature_select = 1;
-        let f1 = (*common).device_feature as u64;
-        let feats = f0 | (f1 << 32);
+        let feats = read_device_features(common);
 
         ksprintln!(
-            "[virtio-pci][feat] device f0={:#x} f1={:#x} all={:#x}",
-            f0,
-            f1,
-            feats
+            "[virtio-pci][feat] device all={:#x} wanted={:#x}",
+            feats,
+            wanted
         );
 
-        let mut accept: u64 = 0;
+        let mut accept = wanted & feats;
         if (feats & VIRTIO_F_VERSION_1) != 0 {
             accept |= VIRTIO_F_VERSION_1;
         }
@@ -70,15 +75,20 @@ pub fn negotiate_features(common: *mut VirtioPciCommonCfg) -> bool {
                 st, feats, accept
             );
             (*common).device_status = STATUS_FAILED;
-            return false;
+            return None;
         }
 
         ksprintln!(
-            "[virtio-pci][feat] FEATURES_OK accepted; status={:#x}",
-            (*common).device_status
+            "[virtio-pci][feat] FEATURES_OK accepted; status={:#x} accept={:#x}",
+            (*common).device_status,
+            accept
         );
-        true
+        Some(accept)
     }
+}
+
+pub fn negotiate_features(common: *mut VirtioPciCommonCfg) -> bool {
+    negotiate_features_with(common, 0).is_some()
 }
 
 pub fn setup_queue(

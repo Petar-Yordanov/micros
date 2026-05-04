@@ -159,3 +159,94 @@ pub fn test_heap() {
 
     ksprintln!("[test] heap OK");
 }
+
+pub fn test_virtio_net() {
+    use crate::kernel::drivers::virtio::net;
+
+    ksprintln!("[test] virtio-net");
+
+    if !net::is_ready() {
+        ksprintln!("[test] virtio-net SKIP (no device attached)");
+        return;
+    }
+
+    let mtu = net::mtu().unwrap_or(0);
+    assert_true("virtio-net mtu nonzero", mtu != 0);
+
+    if let Some(mac) = net::mac_addr() {
+        let all_zero = mac.iter().all(|&b| b == 0);
+        let all_ff = mac.iter().all(|&b| b == 0xFF);
+
+        assert_true("virtio-net mac not all zero", !all_zero);
+        assert_true("virtio-net mac not broadcast", !all_ff);
+        assert_true("virtio-net mac is unicast", (mac[0] & 1) == 0);
+
+        ksprintln!(
+            "[virtio-net] mac={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            mac[0],
+            mac[1],
+            mac[2],
+            mac[3],
+            mac[4],
+            mac[5]
+        );
+    } else {
+        ksprintln!("[virtio-net] mac=(not advertised)");
+    }
+
+    let link = net::link_up();
+    ksprintln!(
+        "[virtio-net] link={} mtu={}",
+        if link { "up" } else { "down" },
+        mtu
+    );
+
+    let mut scratch = [0u8; 4096];
+    let mut polls = 0usize;
+    let mut frames = 0usize;
+
+    for _ in 0..8 {
+        polls += 1;
+
+        match net::recv_frame(&mut scratch) {
+            None => {}
+            Some(n) => {
+                assert_true("virtio-net rx frame fits scratch", n <= scratch.len());
+
+                if n != 0 {
+                    frames += 1;
+
+                    if n >= 14 {
+                        let ethertype = ((scratch[12] as u16) << 8) | (scratch[13] as u16);
+                        ksprintln!(
+                            "[virtio-net] rx len={} dst={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} src={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} ethertype={:#06x}",
+                            n,
+                            scratch[0],
+                            scratch[1],
+                            scratch[2],
+                            scratch[3],
+                            scratch[4],
+                            scratch[5],
+                            scratch[6],
+                            scratch[7],
+                            scratch[8],
+                            scratch[9],
+                            scratch[10],
+                            scratch[11],
+                            ethertype
+                        );
+                    } else {
+                        ksprintln!("[virtio-net] rx short frame len={}", n);
+                    }
+                }
+            }
+        }
+    }
+
+    ksprintln!(
+        "[test] virtio-net RX poll OK (polls={} frames={})",
+        polls,
+        frames
+    );
+    ksprintln!("[test] virtio-net OK");
+}

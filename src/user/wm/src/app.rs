@@ -12,6 +12,8 @@ pub enum AppId {
     TaskManager,
     Clock,
     Notepad,
+    NetInfo,
+    Browser,
 }
 
 pub enum AppLaunch {

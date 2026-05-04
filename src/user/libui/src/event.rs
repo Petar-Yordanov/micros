@@ -13,6 +13,7 @@ pub enum CursorKind {
     Arrow,
     Hand,
     IBeam,
+    Circle,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

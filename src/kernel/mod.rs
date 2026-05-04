@@ -5,6 +5,7 @@ pub mod syscall {
     pub mod fb;
     pub mod input;
     pub mod log;
+    pub mod net;
     pub mod power;
     pub mod proc;
     pub mod shm;
@@ -63,6 +64,56 @@ pub mod fs {
     }
 }
 
+pub mod net {
+    pub mod arp;
+    pub mod checksum;
+    pub mod ethernet;
+    pub mod icmpv4;
+    pub mod iface;
+    pub mod ipv4;
+    pub mod tcp;
+    pub mod udp;
+
+    use crate::kernel::sched::task;
+
+    const POLL_BUDGET: usize = 64;
+    const IDLE_SLEEP_MS: u64 = 2;
+
+    pub fn init() {
+        iface::init();
+    }
+
+    pub fn poll_once() -> bool {
+        ethernet::poll_once()
+    }
+
+    pub fn poll_budget() -> usize {
+        let mut handled = 0usize;
+
+        for _ in 0..POLL_BUDGET {
+            if !poll_once() {
+                break;
+            }
+
+            handled += 1;
+        }
+
+        handled
+    }
+
+    pub extern "C" fn poller_task(_: *mut u8) -> ! {
+        loop {
+            let handled = poll_budget();
+
+            if handled == 0 {
+                task::sleep_ms(IDLE_SLEEP_MS);
+            } else {
+                task::yield_now();
+            }
+        }
+    }
+}
+
 pub mod drivers {
     pub mod pci {
         pub mod cfg_io;
@@ -71,6 +122,7 @@ pub mod drivers {
     pub mod virtio {
         pub mod blk;
         pub mod input;
+        pub mod net;
 
         pub mod pci {
             pub mod caps;
@@ -81,8 +133,8 @@ pub mod drivers {
             pub(crate) use caps::VirtioPciRegs;
             pub use init::init;
             pub use transport::{
-                devcfg_read_le32, devcfg_read_le64, negotiate_features, setup_queue,
-                STATUS_DRIVER_OK,
+                devcfg_read_le32, devcfg_read_le64, negotiate_features, negotiate_features_with,
+                read_device_features, setup_queue, STATUS_DRIVER_OK,
             };
         }
 
@@ -116,5 +168,6 @@ pub mod bootlog {
         bootlog_set_progress_total, try_init,
     };
 }
+
 pub mod boot;
 pub mod selftest;

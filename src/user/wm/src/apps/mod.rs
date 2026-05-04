@@ -4,10 +4,13 @@ use crate::app::{
     App, AppId, AppLaunch, DesktopIcon, StartMenuAction, StartMenuItem, StartSubmenuItem,
 };
 
+pub mod browser;
+pub mod browser_renderer;
 pub mod clock;
 pub mod demo;
 pub mod explorer;
 pub mod hello;
+pub mod netinfo;
 pub mod notepad;
 pub mod taskmgr;
 
@@ -17,8 +20,14 @@ const EXPLORER_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/exp
 const TASKMGR_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/taskmgr.ico");
 const CLOCK_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/clock.ico");
 const NOTEPAD_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/notepad.ico");
+const BROWSER_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/browser.ico");
+const NETINFO_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/netinfo.ico");
 
 const APPLICATIONS_START_SUBMENU: &[StartSubmenuItem] = &[
+    StartSubmenuItem {
+        label: "Open Mini Browser",
+        action: StartMenuAction::Launch(AppId::Browser),
+    },
     StartSubmenuItem {
         label: "Open Notepad",
         action: StartMenuAction::Launch(AppId::Notepad),
@@ -26,6 +35,10 @@ const APPLICATIONS_START_SUBMENU: &[StartSubmenuItem] = &[
     StartSubmenuItem {
         label: "Open Clock App",
         action: StartMenuAction::Launch(AppId::Clock),
+    },
+    StartSubmenuItem {
+        label: "Open Net Info",
+        action: StartMenuAction::Launch(AppId::NetInfo),
     },
     StartSubmenuItem {
         label: "Open Task Manager",
@@ -60,6 +73,12 @@ const START_MENU_ITEMS: &[StartMenuItem] = &[
 
 const DESKTOP_ICONS: &[DesktopIcon] = &[
     DesktopIcon {
+        app_id: AppId::Browser,
+        label: "Browser",
+        icon_ico_bytes: BROWSER_ICON_ICO,
+        placeholder_text: "B",
+    },
+    DesktopIcon {
         app_id: AppId::Clock,
         label: "Clock",
         icon_ico_bytes: CLOCK_ICON_ICO,
@@ -69,6 +88,12 @@ const DESKTOP_ICONS: &[DesktopIcon] = &[
         app_id: AppId::Notepad,
         label: "Notepad",
         icon_ico_bytes: NOTEPAD_ICON_ICO,
+        placeholder_text: "N",
+    },
+    DesktopIcon {
+        app_id: AppId::NetInfo,
+        label: "NetInfo",
+        icon_ico_bytes: NETINFO_ICON_ICO,
         placeholder_text: "N",
     },
     DesktopIcon {
@@ -110,6 +135,8 @@ pub fn make_launch(req: AppLaunch) -> Box<dyn App> {
         AppLaunch::App(AppId::TaskManager) => Box::new(taskmgr::TaskManagerApp::new()),
         AppLaunch::App(AppId::Clock) => Box::new(clock::ClockApp::new()),
         AppLaunch::App(AppId::Notepad) => Box::new(notepad::NotepadApp::new()),
+        AppLaunch::App(AppId::NetInfo) => Box::new(netinfo::NetInfoApp::new()),
+        AppLaunch::App(AppId::Browser) => Box::new(browser::MiniBrowserApp::new()),
         AppLaunch::TextFile(path) => Box::new(notepad::NotepadApp::open(&path)),
     }
 }

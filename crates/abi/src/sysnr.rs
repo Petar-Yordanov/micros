@@ -32,7 +32,7 @@ pub const SYS_TIME_UPTIME: u64 = 33;
 // Debug logs
 pub const SYS_LOG: u64 = 100;
 
-// (TODO: later)
+// IPC
 pub const SYS_CHAN_CREATE: u64 = 30;
 pub const SYS_CHAN_SEND: u64 = 31;
 pub const SYS_CHAN_RECV: u64 = 32;
@@ -44,3 +44,21 @@ pub const SYS_EXEC: u64 = 42;
 
 // Power
 pub const SYS_POWER: u64 = 34;
+
+// Raw NIC / packet I/O
+pub const SYS_NET_INFO: u64 = 35;
+pub const SYS_NET_RECV: u64 = 36;
+pub const SYS_NET_SEND: u64 = 37;
+
+// Kernel network-stack helpers
+pub const SYS_NET_PING_GATEWAY: u64 = 38;
+
+// Kernel TCP byte-stream API
+pub const SYS_TCP_CONNECT: u64 = 43;
+pub const SYS_TCP_SEND: u64 = 44;
+pub const SYS_TCP_RECV: u64 = 45;
+pub const SYS_TCP_CLOSE: u64 = 46;
+
+// Kernel UDP datagram API
+pub const SYS_UDP_SEND_TO: u64 = 47;
+pub const SYS_UDP_RECV_FROM: u64 = 48;

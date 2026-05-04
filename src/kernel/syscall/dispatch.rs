@@ -1,5 +1,5 @@
 use crate::kernel::syscall::power;
-use crate::kernel::syscall::{chan, exec, fb, input, log, proc, shm, time, vfs};
+use crate::kernel::syscall::{chan, exec, fb, input, log, net, proc, shm, time, vfs};
 use micros_abi::errno;
 use micros_abi::sysnr as nr;
 
@@ -40,6 +40,19 @@ pub fn dispatch(nr_no: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64
         nr::SYS_SHM_MAP => shm::sys_shm_map(a0),
 
         nr::SYS_POWER => power::sys_power(a0),
+
+        nr::SYS_NET_INFO => net::sys_net_info(a0),
+        nr::SYS_NET_RECV => net::sys_net_recv(a0),
+        nr::SYS_NET_SEND => net::sys_net_send(a0),
+        nr::SYS_NET_PING_GATEWAY => net::sys_net_ping_gateway(),
+
+        nr::SYS_TCP_CONNECT => net::sys_tcp_connect(a0),
+        nr::SYS_TCP_SEND => net::sys_tcp_send(a0),
+        nr::SYS_TCP_RECV => net::sys_tcp_recv(a0),
+        nr::SYS_TCP_CLOSE => net::sys_tcp_close(a0),
+
+        nr::SYS_UDP_SEND_TO => net::sys_udp_send_to(a0),
+        nr::SYS_UDP_RECV_FROM => net::sys_udp_recv_from(a0),
 
         _ => {
             crate::ksprintln!(

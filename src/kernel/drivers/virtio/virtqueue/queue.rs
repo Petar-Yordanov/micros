@@ -1,3 +1,6 @@
+extern crate alloc;
+
+use alloc::vec::Vec;
 use core::mem::size_of;
 use core::ptr::{read_volatile, write_bytes, write_volatile};
 use core::sync::atomic::{fence, Ordering::SeqCst};
@@ -13,7 +16,7 @@ pub struct VirtQueue {
     pub avail: *mut VirtqAvail,
     pub used: *mut VirtqUsed,
 
-    next_free: u16,
+    free_descs: Vec<u16>,
     pub last_used_idx: u16,
 
     #[allow(dead_code)]
@@ -69,12 +72,17 @@ impl VirtQueue {
 
             let notify_off = (*common).queue_notify_off;
 
+            let mut free_descs = Vec::with_capacity(qsz as usize);
+            for i in (0..qsz).rev() {
+                free_descs.push(i);
+            }
+
             Self {
                 qsz,
                 desc: desc_va as *mut VirtqDesc,
                 avail: avail_va as *mut VirtqAvail,
                 used: used_va as *mut VirtqUsed,
-                next_free: 0,
+                free_descs,
                 last_used_idx: 0,
                 mem: slab,
                 notify_base,
@@ -85,17 +93,32 @@ impl VirtQueue {
     }
 
     pub fn alloc_desc(&mut self) -> u16 {
-        if self.next_free >= self.qsz {
-            self.next_free = 0;
+        match self.free_descs.pop() {
+            Some(i) => i,
+            None => {
+                crate::ksprintln!(
+                    "[virtq] ERROR: descriptor allocation failed: no free descriptors"
+                );
+                panic!("[virtq] no free descriptors");
+            }
         }
-        let i = self.next_free;
-        self.next_free = self.next_free.wrapping_add(1);
+    }
 
-        if self.next_free == 0 {
-            crate::ksprintln!("[virtq] WARNING: descriptor allocation wrapped (no free list!)");
+    pub fn free_desc(&mut self, head: u16) {
+        if head >= self.qsz {
+            crate::ksprintln!(
+                "[virtq] WARNING: refusing to free invalid descriptor id={} qsz={}",
+                head,
+                self.qsz
+            );
+            return;
         }
 
-        i
+        self.free_descs.push(head);
+    }
+
+    pub fn free_count(&self) -> usize {
+        self.free_descs.len()
     }
 
     pub fn push(&mut self, head: u16) {

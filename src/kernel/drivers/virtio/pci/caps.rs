@@ -77,6 +77,7 @@ impl BarMapping {
 pub(crate) enum VirtioDevKind {
     Blk,
     Input,
+    Net,
     Other,
 }
 
@@ -294,6 +295,7 @@ pub(crate) fn parse_caps_for_device(bus: u8, dev: u8, func: u8) -> Option<Virtio
     );
 
     regs.kind = match did {
+        0x1041 | 0x1000 => VirtioDevKind::Net,
         0x1042 | 0x1001 => VirtioDevKind::Blk,
         0x1052 | 0x1048 | 0x1006 => VirtioDevKind::Input,
         _ => {

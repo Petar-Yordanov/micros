@@ -7,9 +7,11 @@ const PCI_VENDOR_VIRTIO: u16 = 0x1AF4;
 
 pub fn init() {
     let mut got_blk = false;
+    let mut got_net = false;
 
     super::super::blk::ensure_globals();
     super::super::input::ensure_globals();
+    super::super::net::ensure_globals();
 
     for bus in 0u8..=255 {
         for dev in 0u8..32 {
@@ -29,6 +31,12 @@ pub fn init() {
                                 got_blk = true;
                             }
                         }
+                        VirtioDevKind::Net if !got_net => {
+                            if super::super::net::try_attach(regs) {
+                                ksprintln!("[virtio-pci] net ready");
+                                got_net = true;
+                            }
+                        }
                         VirtioDevKind::Input => {
                             if super::super::input::try_attach(regs) {
                                 ksprintln!("[virtio-pci] input ready");
@@ -43,6 +51,9 @@ pub fn init() {
 
     if !got_blk {
         ksprintln!("[virtio-pci] WARN: no blk found");
+    }
+    if !got_net {
+        ksprintln!("[virtio-pci] WARN: no net found");
     }
     if super::super::input::count_devices() == 0 {
         ksprintln!("[virtio-pci] WARN: no input found");

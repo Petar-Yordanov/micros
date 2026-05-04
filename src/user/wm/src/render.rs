@@ -848,8 +848,9 @@ fn write_4(buf: &mut [u8], off: usize, value: u32) {
 fn draw_cursor(canvas: &mut Canvas, x: i32, y: i32, kind: CursorKind) {
     match kind {
         CursorKind::Arrow => draw_arrow_cursor(canvas, x, y),
-        CursorKind::Hand => draw_hand_cursor(canvas, x, y),
-        CursorKind::IBeam => draw_ibeam_cursor(canvas, x, y),
+        CursorKind::Hand => draw_circle_cursor(canvas, x, y),
+        CursorKind::IBeam => draw_circle_cursor(canvas, x, y),
+        CursorKind::Circle => draw_circle_cursor(canvas, x, y),
     }
 }
 
@@ -893,52 +894,24 @@ fn draw_arrow_cursor(canvas: &mut Canvas, x: i32, y: i32) {
     draw_cursor_bitmap(canvas, x, y, ARROW);
 }
 
-fn draw_hand_cursor(canvas: &mut Canvas, x: i32, y: i32) {
-    const HAND: &[&str] = &[
-        "   XX           ",
-        "   X.X          ",
-        "   X.X          ",
-        "   X.X          ",
-        "   X.X          ",
-        "   X.X          ",
-        "   X.X          ",
-        "  XX.XXXXXXXX   ",
-        " X...........X  ",
-        " X...........X  ",
-        " X...........X  ",
-        " X...........X  ",
-        " X...........X  ",
-        "  X........XXX  ",
-        "  X.......X     ",
-        "  X......X      ",
-        "   X....X       ",
-        "   XXXXXX       ",
-        "                ",
+fn draw_circle_cursor(canvas: &mut Canvas, x: i32, y: i32) {
+    const CIRCLE: &[&str] = &[
+        "     XXXXX     ",
+        "   XX.....XX   ",
+        "  X.........X  ",
+        " X...........X ",
+        " X...........X ",
+        "X.............X",
+        "X.............X",
+        "X.............X",
+        "X.............X",
+        "X.............X",
+        " X...........X ",
+        " X...........X ",
+        "  X.........X  ",
+        "   XX.....XX   ",
+        "     XXXXX     ",
     ];
-    draw_cursor_bitmap(canvas, x, y, HAND);
-}
 
-fn draw_ibeam_cursor(canvas: &mut Canvas, x: i32, y: i32) {
-    const IBEAM: &[&str] = &[
-        " XXXXXXX ",
-        " XX...XX ",
-        " XXXXXXX ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        "    X    ",
-        " XXXXXXX ",
-        " XX...XX ",
-        " XXXXXXX ",
-    ];
-    draw_cursor_bitmap(canvas, x, y, IBEAM);
+    draw_cursor_bitmap(canvas, x - 7, y - 7, CIRCLE);
 }

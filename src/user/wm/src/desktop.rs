@@ -217,24 +217,24 @@ impl Desktop {
 
     fn resolve_cursor_kind(&self, pos: Point) -> CursorKind {
         if self.start_button_rect().contains(pos) {
-            return CursorKind::Hand;
+            return CursorKind::Circle;
         }
 
         if self.taskbar_rect().contains(pos) {
             for i in 0..self.windows.len() {
                 if self.task_button_rect(i).contains(pos) {
-                    return CursorKind::Hand;
+                    return CursorKind::Circle;
                 }
             }
         }
 
         if self.start_menu_interactive_at(pos) {
-            return CursorKind::Hand;
+            return CursorKind::Circle;
         }
 
         for i in 0..self.desktop_icons().len() {
             if self.desktop_icon_rect(i).contains(pos) {
-                return CursorKind::Hand;
+                return CursorKind::Circle;
             }
         }
 
@@ -245,7 +245,7 @@ impl Desktop {
                 || win.minimize_button_rect().contains(pos)
                 || win.maximize_button_rect().contains(pos)
             {
-                return CursorKind::Hand;
+                return CursorKind::Circle;
             }
 
             if win.contains_client(pos) {
@@ -386,6 +386,8 @@ impl Desktop {
             AppLaunch::App(AppId::TaskManager) => (620, 394),
             AppLaunch::App(AppId::Clock) => (440, 340),
             AppLaunch::App(AppId::Notepad) => (640, 420),
+            AppLaunch::App(AppId::NetInfo) => (460, 340),
+            AppLaunch::App(AppId::Browser) => (660, 460),
             AppLaunch::TextFile(_) => (640, 420),
         };
 
@@ -976,7 +978,8 @@ fn union_rect(a: Rect, b: Rect) -> Rect {
 fn cursor_rect_at(pos: Point, kind: CursorKind) -> Rect {
     match kind {
         CursorKind::Arrow => Rect::new(pos.x, pos.y, 16, 24),
-        CursorKind::Hand => Rect::new(pos.x, pos.y, 18, 22),
-        CursorKind::IBeam => Rect::new(pos.x, pos.y, 11, 19),
+        CursorKind::Hand => Rect::new(pos.x - 8, pos.y - 8, 18, 18),
+        CursorKind::IBeam => Rect::new(pos.x - 8, pos.y - 8, 18, 18),
+        CursorKind::Circle => Rect::new(pos.x - 8, pos.y - 8, 18, 18),
     }
 }

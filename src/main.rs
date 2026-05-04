@@ -12,15 +12,15 @@ mod platform;
 use crate::arch::x86_64::cpu::{cpuid, fpu};
 pub use crate::arch::x86_64::serial;
 use crate::arch::x86_64::time::apic;
-use crate::bootlog::boot_progress_step;
 use crate::kernel::boot::idle;
 use crate::kernel::bootlog;
+use crate::kernel::bootlog::boot_progress_step;
 use crate::kernel::fs::vfs;
 use crate::kernel::mm::map::mapper::{self as page, Prot};
 use crate::kernel::mm::phys::frame;
 use crate::kernel::mm::virt::vmarena;
 use crate::kernel::sched::kstack::alloc_kstack_top;
-use crate::kernel::selftest::{test_frames, test_heap, test_paging, test_vmarena};
+use crate::kernel::selftest::{test_frames, test_heap, test_paging, test_virtio_net, test_vmarena};
 use x86_64::registers::model_specific::Msr;
 use x86_64::{PhysAddr, VirtAddr};
 
@@ -28,7 +28,7 @@ use x86_64::{PhysAddr, VirtAddr};
 pub extern "C" fn _start() -> ! {
     unsafe {
         x86_64::instructions::interrupts::disable();
-        bootlog::bootlog_set_progress_total(18);
+        bootlog::bootlog_set_progress_total(19);
         bootlog::boot_progress_step(0);
         bootlog::try_init();
         bootlog::bootlog_fb_enable();
@@ -107,13 +107,18 @@ pub extern "C" fn _start() -> ! {
         boot_progress_step(12);
         ksprintln!("[virtio] pci scan complete");
 
+        test_virtio_net();
+        crate::kernel::net::init();
+        boot_progress_step(13);
+        ksprintln!("[test] virtio-net selftest complete");
+
         let mut buf = [0u8; 512];
         let ok = crate::kernel::drivers::virtio::blk::read_at(0, &mut buf);
-        boot_progress_step(13);
+        boot_progress_step(14);
         ksprintln!("[virtio] blk LBA0 read {}", if ok { "OK" } else { "ERR" });
 
         vfs::vfs_selftest();
-        boot_progress_step(14);
+        boot_progress_step(15);
         ksprintln!("[fs] vfs selftest complete");
 
         let apic_base_msr = Msr::new(0x1B).read();
@@ -125,7 +130,7 @@ pub extern "C" fn _start() -> ! {
         page::map_fixed(lapic_va, pf, Prot::MMIO).expect("map LAPIC UC");
 
         apic::init(0xEF, Some(lapic_va.as_mut_ptr()));
-        boot_progress_step(15);
+        boot_progress_step(16);
         ksprintln!("[apic] local APIC initialized");
 
         let idle_top = alloc_kstack_top(2);
@@ -136,12 +141,15 @@ pub extern "C" fn _start() -> ! {
             idle_top,
         );
         crate::kernel::sched::task::init(idle_task);
-        boot_progress_step(16);
+        boot_progress_step(17);
         ksprintln!("[sched] idle task ready");
+
+        // disabled, spin-mutex net poller can deadlock under single-core preemption
+        ksprintln!("[net] background poller disabled; syscalls poll RX synchronously");
 
         let init_top = alloc_kstack_top(4);
         crate::kernel::exec::init::spawn_init(init_top);
-        boot_progress_step(17);
+        boot_progress_step(18);
         ksprintln!("[init] /bin/init.elf spawned");
 
         let lapic_hz = 1_000_000;
@@ -153,7 +161,7 @@ pub extern "C" fn _start() -> ! {
         apic::debug_dump();
         let _ = apic::probe_timer_countdown(500);
 
-        boot_progress_step(18);
+        boot_progress_step(19);
         x86_64::instructions::interrupts::enable();
 
         ksprintln!("[handoff] entering scheduler");

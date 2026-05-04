@@ -148,8 +148,6 @@ pub struct VfsMountArgs {
     pub base_off_bytes: u64,
 }
 
-// Channels (IPC)
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ChanCreateArgs {
@@ -172,8 +170,6 @@ pub struct ChanRecvArgs {
     pub out_cap: u64,
 }
 
-// Shared memory
-
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ShmCreateArgs {
@@ -185,6 +181,72 @@ pub struct ShmCreateArgs {
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ShmMapArgs {
     pub shm_id: u64,
-    pub desired_va: u64, // kernel chooses a deterministic VA
+    pub desired_va: u64,
     pub flags: u64,
+}
+
+pub const ABI_NET_INFO_F_LINK_UP: u32 = 1 << 0;
+pub const ABI_NET_INFO_F_HAS_MAC: u32 = 1 << 1;
+pub const ABI_NET_INFO_F_HAS_IPV4: u32 = 1 << 2;
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NetInfo {
+    pub flags: u32,
+    pub mtu: u32,
+    pub mac: [u8; 6],
+    pub _pad0: [u8; 2],
+    pub ipv4: [u8; 4],
+    pub netmask: [u8; 4],
+    pub gateway: [u8; 4],
+    pub _pad1: [u8; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct NetIoArgs {
+    pub buf_ptr: u64,
+    pub buf_len: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TcpConnectArgs {
+    pub dst_ip: [u8; 4],
+    pub dst_port: u16,
+    pub _pad0: u16,
+    pub timeout_polls: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct TcpIoArgs {
+    pub fd: u64,
+    pub buf_ptr: u64,
+    pub buf_len: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UdpSendToArgs {
+    pub dst_ip: [u8; 4],
+    pub dst_port: u16,
+    pub src_port: u16,
+    pub buf_ptr: u64,
+    pub buf_len: u64,
+    pub timeout_polls: u32,
+    pub _pad0: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct UdpRecvFromArgs {
+    pub local_port: u16,
+    pub _pad0: u16,
+    pub timeout_polls: u32,
+    pub out_ptr: u64,
+    pub out_cap: u64,
+    pub src_ip: [u8; 4],
+    pub src_port: u16,
+    pub _pad1: u16,
 }
