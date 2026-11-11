@@ -3,7 +3,7 @@ LIMINE_DIR ?= $(PWD)/Limine
 DISK      := disk.img
 DISK_SIZE := 1G
 
-FS ?=
+FS ?= ext2
 
 ISO       := micros64.iso
 KERNEL    := target/x86_64-unknown-none/debug/micros64
@@ -18,6 +18,9 @@ USER_INIT_DIR    := src/user/init
 USER_WM_DIR      := src/user/wm
 USER_IPC_SRV_DIR := src/user/apps/ipc_srv
 USER_IPC_CLI_DIR := src/user/apps/ipc_cli
+USER_APP_HOST_DIR := src/user/app_host
+USER_APP_NAMES := hello_app demo_app explorer_app taskmgr_app clock_app notepad_app netinfo_app browser_app
+USER_APP_BINS := $(addprefix $(USER_TARGET_DIR)/x86_64-unknown-none/debug/,$(USER_APP_NAMES))
 
 USER_INIT_BIN    := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/init
 USER_WM_BIN      := $(USER_TARGET_DIR)/x86_64-unknown-none/debug/wm
@@ -36,7 +39,18 @@ $(KERNEL):
 	cargo +nightly build -Z build-std=core,alloc
 
 .PHONY: build-user
-build-user: $(USER_INIT_BIN) $(USER_WM_BIN) $(USER_IPC_SRV_BIN) $(USER_IPC_CLI_BIN)
+build-user: $(USER_INIT_BIN) $(USER_WM_BIN) $(USER_IPC_SRV_BIN) $(USER_IPC_CLI_BIN) build-user-apps
+
+.PHONY: build-user-apps
+build-user-apps:
+	@echo "[mk] building isolated GUI applications"
+	@cd $(USER_APP_HOST_DIR) && cargo +nightly build \
+	  -Z build-std=core,alloc -Z json-target-spec \
+	  --target $(TARGET_JSON) --target-dir $(USER_TARGET_DIR) --bins
+	@for name in $(USER_APP_NAMES); do \
+	  test -f "$(USER_TARGET_DIR)/x86_64-unknown-none/debug/$$name" || { \
+	  echo "[mk][ERR] missing app: $$name" >&2; exit 1; }; \
+	done
 
 # Build init
 $(USER_INIT_BIN):
@@ -116,7 +130,7 @@ check-vars:
 check-fs:
 	@set -e; \
 	  if [ -z "$(FS)" ]; then \
-	    echo "[mk][ERR] FS is required: make <target> FS=fat32|ext2"; \
+	    echo "[mk][ERR] FS must be ext2 (default) or fat32"; \
 	    exit 1; \
 	  fi; \
 	  if [ "$(FS)" != "fat32" ] && [ "$(FS)" != "ext2" ]; then \
@@ -148,6 +162,7 @@ populate-disk: check-vars check-fs $(DISK) build-user
 	@test -f "$(USER_WM_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_WM_BIN)"; exit 1)
 	@test -f "$(USER_IPC_SRV_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_IPC_SRV_BIN)"; exit 1)
 	@test -f "$(USER_IPC_CLI_BIN)" || (echo "[mk][ERR] missing user bin: $(USER_IPC_CLI_BIN)"; exit 1)
+	@for bin in $(USER_APP_BINS); do test -f "$$bin" || { echo "[mk][ERR] missing $$bin" >&2; exit 1; }; done
 	@set -e; \
 	  if [ "$(FS)" = "fat32" ]; then \
 	    echo "[mk] populating disk (FAT32): /hello.txt, /testdir/, /bin/init.elf, /bin/wm.elf, /bin/ipc_srv.elf, /bin/ipc_cli.elf"; \
@@ -160,7 +175,10 @@ populate-disk: check-vars check-fs $(DISK) build-user
 	    mcopy -D o -o -i $(DISK) $(USER_WM_BIN)      ::/bin/wm.elf      >/dev/null; \
 	    mcopy -D o -o -i $(DISK) $(USER_IPC_SRV_BIN) ::/bin/ipc_srv.elf >/dev/null; \
 	    mcopy -D o -o -i $(DISK) $(USER_IPC_CLI_BIN) ::/bin/ipc_cli.elf >/dev/null; \
-	    for elf in init wm ipc_srv ipc_cli; do \
+	    for app in $(USER_APP_NAMES); do \
+	      mcopy -D o -o -i $(DISK) "$(USER_TARGET_DIR)/x86_64-unknown-none/debug/$$app" "::/bin/$$app.elf" >/dev/null; \
+	    done; \
+	    for elf in init wm ipc_srv ipc_cli $(USER_APP_NAMES); do \
 	      src="$(USER_TARGET_DIR)/x86_64-unknown-none/debug/$$elf"; \
 	      dst="::/bin/$$elf.elf"; \
 	      verify=$$(mktemp); \
@@ -185,6 +203,9 @@ populate-disk: check-vars check-fs $(DISK) build-user
 	    debugfs -w -R "write $(USER_WM_BIN) /bin/wm.elf" $(DISK) >/dev/null; \
 	    debugfs -w -R "write $(USER_IPC_SRV_BIN) /bin/ipc_srv.elf" $(DISK) >/dev/null; \
 	    debugfs -w -R "write $(USER_IPC_CLI_BIN) /bin/ipc_cli.elf" $(DISK) >/dev/null; \
+	    for app in $(USER_APP_NAMES); do \
+	      debugfs -w -R "write $(USER_TARGET_DIR)/x86_64-unknown-none/debug/$$app /bin/$$app.elf" $(DISK) >/dev/null; \
+	    done; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \
@@ -229,8 +250,8 @@ run-just: $(ISO) check-vars
 	  if [ -z "$$fs" ]; then \
 	    echo "[mk][ERR] $(DISK) is missing or unformatted."; \
 	    echo "           Do:"; \
-	    echo "             make create-disk FS=fat32|ext2"; \
-	    echo "             make setup-disk  FS=fat32|ext2"; \
+	    echo "             make recreate-disk          # ext2 (default)"; \
+	    echo "             make recreate-disk FS=fat32 # optional FAT32"; \
 	    exit 1; \
 	  fi; \
 	  echo "[mk] inferred FS=$$fs for $(DISK)"; \

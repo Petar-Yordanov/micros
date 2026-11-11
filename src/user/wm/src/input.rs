@@ -85,7 +85,9 @@ impl InputParser {
 pub fn next_parsed_event(parser: &mut InputParser) -> Option<ParsedInputEvent> {
     let mut raw = AbiInputEvent::default();
 
-    loop {
+    // A continuous stream of partial REL events must not hold the WM here
+    // indefinitely. Leave the remaining events for the next compositor pass.
+    for _ in 0..128 {
         let r = next_event(&mut raw);
         if r == EAGAIN || r < 0 {
             return None;
@@ -95,4 +97,5 @@ pub fn next_parsed_event(parser: &mut InputParser) -> Option<ParsedInputEvent> {
             return Some(ev);
         }
     }
+    None
 }

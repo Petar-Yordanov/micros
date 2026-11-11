@@ -20,6 +20,7 @@ pub fn dispatch(nr_no: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64
         nr::SYS_PROC_LIST => proc::sys_proc_list(a0, a1, a2),
         nr::SYS_SLEEP_MS => proc::sys_sleep_ms(a0),
         nr::SYS_PROC_INFO => proc::sys_proc_info(a0, a1),
+        nr::SYS_HEAP_COMMIT => proc::sys_heap_commit(a0),
 
         nr::SYS_TIME_WALL => time::sys_time_wall(a0),
         nr::SYS_TIME_UPTIME => time::sys_time_uptime(a0),
@@ -35,9 +36,13 @@ pub fn dispatch(nr_no: u64, a0: u64, a1: u64, a2: u64, a3: u64, a4: u64, a5: u64
         nr::SYS_CHAN_CREATE => chan::sys_chan_create(a0),
         nr::SYS_CHAN_SEND => chan::sys_chan_send(a0),
         nr::SYS_CHAN_RECV => chan::sys_chan_recv(a0),
+        nr::SYS_CHAN_PUBLISH => chan::sys_chan_publish(a0),
+        nr::SYS_CHAN_FIND => chan::sys_chan_find(a0),
+        nr::SYS_CHAN_RECV_WAIT => chan::sys_chan_recv_wait(a0,a1),
 
         nr::SYS_SHM_CREATE => shm::sys_shm_create(a0),
         nr::SYS_SHM_MAP => shm::sys_shm_map(a0),
+        nr::SYS_SHM_UNMAP => shm::sys_shm_unmap(a0),
 
         nr::SYS_POWER => power::sys_power(a0),
 

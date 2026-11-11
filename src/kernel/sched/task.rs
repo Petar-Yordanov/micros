@@ -128,7 +128,7 @@ impl TaskPtr {
 
 static NEXT_TID: AtomicU64 = AtomicU64::new(1);
 static JIFFIES: AtomicU64 = AtomicU64::new(0);
-const DEFAULT_SLICE: u32 = 2;
+const DEFAULT_SLICE: u32 = 8;
 static INITED: AtomicBool = AtomicBool::new(false);
 
 static RUNQ: Mutex<VecDeque<TaskPtr>> = Mutex::new(VecDeque::new());
@@ -319,7 +319,65 @@ pub fn request_resched() {
 
 pub fn yield_now() {
     request_resched();
+    // A userspace process must be switched by the ring-3 timer TrapFrame
+    // path, never by the kernel-only `switch_context()` mechanism.
+    let cur = current_ptr();
+    if in_syscall() || (!cur.is_null() && unsafe { matches!(&(*cur).kind, TaskKind::UThread { .. }) }) {
+        return;
+    }
     schedule();
+}
+
+/// Mark the current user process sleeping; the timer IRQ performs the actual
+/// TrapFrame switch after the syscall returns to ring 3.
+/// A pending receive is handled by the user timer interrupt, never by
+/// switch_context() (which is only safe for kernel threads).
+pub fn current_tid()->Option<TaskId> {
+    let cur=current_ptr();
+    if cur.is_null(){None}else{Some(unsafe{(*cur).tid})}
+}
+pub fn block_current_user() {
+    let cur=current_ptr();
+    if cur.is_null(){return;}
+    unsafe {
+        if let TaskKind::UThread { .. }=(*cur).kind {
+            if (*cur).state != TaskState::Blocked {
+                (*cur).state=TaskState::Blocked;
+                RUNQ.lock().push_back(TaskPtr::new(cur));
+            }
+            request_resched();
+        }
+    }
+}
+pub fn wake_tid(tid:TaskId) {
+    let rq=RUNQ.lock();
+    for tp in rq.iter() {
+        let t=tp.get();
+        unsafe {
+            if !t.is_null() && (*t).tid==tid &&
+                ((*t).state==TaskState::Blocked || (*t).state==TaskState::Sleeping) {
+                (*t).state=TaskState::Runnable;
+                (*t).timeslice=DEFAULT_SLICE;
+                request_resched();
+                break;
+            }
+        }
+    }
+}
+
+pub fn sleep_current_user(ms: u64) {
+    let cur = current_ptr();
+    if cur.is_null() { return; }
+    unsafe {
+        if let TaskKind::UThread { .. } = (*cur).kind {
+            if (*cur).state != TaskState::Sleeping {
+                (*cur).wake_jiffies = jiffies().saturating_add(ms_to_ticks(ms));
+                (*cur).state = TaskState::Sleeping;
+                RUNQ.lock().push_back(TaskPtr::new(cur));
+            }
+            request_resched();
+        }
+    }
 }
 
 pub fn sleep_ms(ms: u64) {
@@ -334,39 +392,51 @@ pub fn sleep_ms(ms: u64) {
     schedule();
 }
 
+/// Timer IRQs may interrupt userspace syscalls while kernel spin mutexes are
+/// held. An IRQ must NEVER wait for a mutex owned by the interrupted context:
+/// that context cannot resume to release it until the IRQ returns.
+///
+/// Advance the clock unconditionally, but skip run-queue bookkeeping on a
+/// contended tick. The next tick will revisit all sleeping tasks using their
+/// absolute wake deadline, so no wakeup is lost.
 pub fn on_tick() {
-    JIFFIES.fetch_add(1, Ordering::Relaxed);
+    let now = JIFFIES.fetch_add(1, Ordering::Relaxed).saturating_add(1);
 
-    let mut woke_any = false;
-
-    unsafe {
-        let cur = current_ptr();
-        if !cur.is_null() && cur != idle_ptr() && (*cur).state == TaskState::Running {
-            if (*cur).timeslice > 0 {
-                (*cur).timeslice -= 1;
-            }
-            if (*cur).timeslice == 0 {
-                NEED_RESCHED.store(true, Ordering::Release);
-            }
-        }
-    }
-
-    let now = jiffies();
-    let mut runq = RUNQ.lock();
-    for tp in runq.iter_mut() {
-        let t = tp.get();
+    // `current_ptr()` and `idle_ptr()` take blocking spin locks. Do not call
+    // those helpers from an interrupt that may have interrupted their owners.
+    if let (Some(cur_guard), Some(idle_guard)) = (CURRENT.try_lock(), IDLE.try_lock()) {
+        let cur = cur_guard.get();
+        let idle = idle_guard.get();
         unsafe {
-            if !t.is_null() && (*t).state == TaskState::Sleeping && (*t).wake_jiffies <= now {
-                (*t).state = TaskState::Runnable;
-                (*t).timeslice = DEFAULT_SLICE;
-                woke_any = true;
+            if !cur.is_null() && cur != idle && (*cur).state == TaskState::Running {
+                if (*cur).timeslice > 0 {
+                    (*cur).timeslice -= 1;
+                }
+                if (*cur).timeslice == 0 {
+                    NEED_RESCHED.store(true, Ordering::Release);
+                }
             }
         }
     }
-    drop(runq);
 
-    if woke_any {
-        NEED_RESCHED.store(true, Ordering::Release);
+    // This MUST be non-blocking: syscall paths also hold RUNQ.lock() while
+    // interrupts are enabled. Skipping one tick is safe; wake_jiffies is an
+    // absolute deadline and will be checked again at the next IRQ.
+    if let Some(mut runq) = RUNQ.try_lock() {
+        let mut woke_any = false;
+        for tp in runq.iter_mut() {
+            let t = tp.get();
+            unsafe {
+                if !t.is_null() && (*t).state == TaskState::Sleeping && (*t).wake_jiffies <= now {
+                    (*t).state = TaskState::Runnable;
+                    (*t).timeslice = DEFAULT_SLICE;
+                    woke_any = true;
+                }
+            }
+        }
+        if woke_any {
+            NEED_RESCHED.store(true, Ordering::Release);
+        }
     }
 }
 
@@ -433,7 +503,12 @@ pub unsafe fn preempt_from_timer(tf: &mut TrapFrame) -> *const TrapFrame {
         for _ in 0..len {
             if let Some(tp) = runq.pop_front() {
                 let t = tp.get();
-                if !t.is_null() && (*t).state == TaskState::Runnable {
+                if !t.is_null()
+                    && (*t).state == TaskState::Runnable
+                    && matches!(&(*t).kind, TaskKind::UThread { .. })
+                    && (*t).tf_valid
+                    && ((*t).tf.cs & 3) == 3
+                {
                     picked = t;
                     break;
                 } else {
@@ -444,16 +519,22 @@ pub unsafe fn preempt_from_timer(tf: &mut TrapFrame) -> *const TrapFrame {
             }
         }
 
-        if picked.is_null() {
-            idle_ptr()
-        } else {
-            picked
-        }
+        // Kernel threads are switched via their saved kernel `Context`, not
+        // via an interrupt return frame. If no eligible user task exists,
+        // leave this task running until a valid user candidate is available.
+        picked
     };
 
     if next_ptr.is_null() || next_ptr == cur_ptr {
-        (*cur_ptr).state = TaskState::Running;
-        NEED_RESCHED.store(false, Ordering::Release);
+        // There is no alternative ring-3 task yet. A blocked/sleeping task
+        // may temporarily continue polling, but NEVER resurrect an exited
+        // task as runnable; retry the exit handoff on the next timer tick.
+        if (*cur_ptr).state == TaskState::Zombie {
+            NEED_RESCHED.store(true, Ordering::Release);
+        } else {
+            (*cur_ptr).state = TaskState::Running;
+            NEED_RESCHED.store(false, Ordering::Release);
+        }
         return core::ptr::null();
     }
 
@@ -483,6 +564,13 @@ pub fn schedule() {
     interrupts::disable();
 
     let cur_ptr = CURRENT.lock().get();
+    if !cur_ptr.is_null() && unsafe { matches!(&(*cur_ptr).kind, TaskKind::UThread { .. }) } {
+        // A userspace task does not have a kernel `Context` suitable for
+        // switch_context(). The ring-3 timer IRQ owns its context switches.
+        NEED_RESCHED.store(true, Ordering::Release);
+        interrupts::enable();
+        return;
+    }
     let first_handoff = cur_ptr.is_null();
 
     let next_ptr = {
@@ -494,7 +582,8 @@ pub fn schedule() {
             if let Some(tp) = runq.pop_front() {
                 let t = tp.get();
                 unsafe {
-                    if !t.is_null() && (*t).state == TaskState::Runnable {
+                    if !t.is_null() && (*t).state == TaskState::Runnable
+                        && matches!(&(*t).kind, TaskKind::KThread { .. }) {
                         picked = t;
                         break;
                     } else {
@@ -608,4 +697,17 @@ impl Task {
             );
         }
     }
+}
+
+/// Remove every run-queue reference before releasing a terminated Task.
+/// Called by a *different* process after the victim has stopped running.
+pub fn reap_zombie_task(ptr: *mut Task) -> bool {
+    if ptr.is_null() { return false; }
+    if CURRENT.lock().get() == ptr { return false; }
+    unsafe {
+        if (*ptr).state != TaskState::Zombie { return false; }
+        RUNQ.lock().retain(|entry| entry.get() != ptr);
+        drop(Box::from_raw(ptr));
+    }
+    true
 }

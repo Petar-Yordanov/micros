@@ -36,10 +36,28 @@ pub fn spawn(path: &str) -> Result<Pid, Errno> {
     Ok(r as Pid)
 }
 
+/// Probe an exited process and advance at most one bounded cleanup step.
+/// EAGAIN means the process is still alive or teardown is still in progress.
+/// GUI event loops must use this instead of `wait()`.
+#[inline(always)]
+pub fn try_wait(pid: Pid, status_out_ptr: u64) -> Result<Pid, Errno> {
+    cvt(syscall2(sysnr::SYS_PROC_WAIT, pid as u64, status_out_ptr)).map(|r| r as Pid)
+}
+
 #[inline(always)]
 pub fn wait(pid: Pid, status_out_ptr: u64) -> Result<Pid, Errno> {
-    let r = cvt(syscall2(sysnr::SYS_PROC_WAIT, pid as u64, status_out_ptr))?;
-    Ok(r as Pid)
+    // The kernel probes rather than waiting inside a syscall. A pending
+    // process returns EAGAIN; retry from ring 3 so the timer can schedule
+    // the child and eventually observe its zombie state.
+    loop {
+        match try_wait(pid, status_out_ptr) {
+            Ok(r) => return Ok(r),
+            Err(Errno(n)) if n as i64 == micros_abi::errno::EAGAIN => {
+                let _ = crate::sched::sleep_ms(1);
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 #[inline(always)]

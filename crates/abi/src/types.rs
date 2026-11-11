@@ -172,6 +172,14 @@ pub struct ChanRecvArgs {
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
+pub struct ChanNameArgs {
+    pub name_ptr: u64,
+    pub name_len: u64,
+    pub chan_id: u64, // Used by publish; ignored by find.
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct ShmCreateArgs {
     pub size: u64,
     pub flags: u64,

@@ -45,6 +45,8 @@ pub struct Process {
     pub kstack_top: VirtAddr,
     pub main_task: TaskHandle,
     pub state: ProcState,
+    // Bytes of anonymous user heap currently backed by physical frames.
+    pub heap_committed: u64,
     pub name: String,
 }
 
@@ -88,6 +90,7 @@ pub fn create_kernel_backed_process(
             kstack_top,
             main_task: TaskHandle::new(task_ptr),
             state: ProcState::Running,
+            heap_committed: 0,
             name: String::from(name),
         });
     }

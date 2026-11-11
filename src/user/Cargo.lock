@@ -3,6 +3,26 @@
 version = 4
 
 [[package]]
+name = "app_host"
+version = "0.1.0"
+dependencies = [
+ "appkit",
+ "libui",
+ "rlibc",
+]
+
+[[package]]
+name = "appkit"
+version = "0.1.0"
+dependencies = [
+ "font8x8",
+ "libm",
+ "libui",
+ "micros-abi",
+ "rlibc",
+]
+
+[[package]]
 name = "font8x8"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

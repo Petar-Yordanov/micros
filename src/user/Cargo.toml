@@ -8,6 +8,8 @@ members = [
   "apps/hello",
   "apps/ipc_cli",
   "apps/ipc_srv",
+  "appkit",
+  "app_host",
 ]
 
 default-members = [
@@ -18,6 +20,12 @@ default-members = [
 
 [workspace.dependencies]
 micros-abi = { path = "../../crates/abi" }
+
+# Smaller ELF images reduce ext2 I/O and process start time. Kernel remains
+# on its own debug profile in the root Cargo workspace.
+[profile.dev]
+opt-level = 1
+debug = 0
 
 [profile.release]
 panic = "abort"

@@ -1,0 +1,9 @@
+[package]
+name = "app_host"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+appkit = { path = "../appkit" }
+rlibc = { path = "../rlibc" }
+libui = { path = "../libui" }

@@ -1,19 +1,4 @@
-use alloc::boxed::Box;
-
-use crate::app::{
-    App, AppId, AppLaunch, DesktopIcon, StartMenuAction, StartMenuItem, StartSubmenuItem,
-};
-
-pub mod browser;
-pub mod browser_renderer;
-pub mod clock;
-pub mod demo;
-pub mod explorer;
-pub mod hello;
-pub mod netinfo;
-pub mod notepad;
-pub mod taskmgr;
-
+use crate::app::{AppId,DesktopIcon,StartMenuAction,StartMenuItem,StartSubmenuItem};
 const HELLO_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/hello.ico");
 const DEMO_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/demo.ico");
 const EXPLORER_ICON_ICO: &[u8] = include_bytes!("../../../../../assets/icons/explorer.ico");
@@ -122,29 +107,5 @@ const DESKTOP_ICONS: &[DesktopIcon] = &[
     },
 ];
 
-#[allow(dead_code)]
-pub fn make_app(id: AppId) -> Box<dyn App> {
-    make_launch(AppLaunch::App(id))
-}
-
-pub fn make_launch(req: AppLaunch) -> Box<dyn App> {
-    match req {
-        AppLaunch::App(AppId::Hello) => Box::new(hello::HelloApp::new()),
-        AppLaunch::App(AppId::Demo) => Box::new(demo::DemoApp::new()),
-        AppLaunch::App(AppId::Explorer) => Box::new(explorer::ExplorerApp::new()),
-        AppLaunch::App(AppId::TaskManager) => Box::new(taskmgr::TaskManagerApp::new()),
-        AppLaunch::App(AppId::Clock) => Box::new(clock::ClockApp::new()),
-        AppLaunch::App(AppId::Notepad) => Box::new(notepad::NotepadApp::new()),
-        AppLaunch::App(AppId::NetInfo) => Box::new(netinfo::NetInfoApp::new()),
-        AppLaunch::App(AppId::Browser) => Box::new(browser::MiniBrowserApp::new()),
-        AppLaunch::TextFile(path) => Box::new(notepad::NotepadApp::open(&path)),
-    }
-}
-
-pub fn start_menu_items() -> &'static [StartMenuItem] {
-    START_MENU_ITEMS
-}
-
-pub fn desktop_icons() -> &'static [DesktopIcon] {
-    DESKTOP_ICONS
-}
+pub fn start_menu_items()->&'static [StartMenuItem] {START_MENU_ITEMS}
+pub fn desktop_icons()->&'static [DesktopIcon] {DESKTOP_ICONS}

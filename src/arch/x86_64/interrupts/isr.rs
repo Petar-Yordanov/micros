@@ -150,10 +150,12 @@ pub extern "x86-interrupt" fn pf_handler(sf: InterruptStackFrame, code: PageFaul
         };
 
         ksprintln!(
-            "[#PF] addr={:#018x} code={:?} RIP={:#018x} RSP={:#018x} tid={} kstack_top={:#018x}",
+            "[#PF] addr={:#018x} code={:?} RIP={:#018x} CS={:#x} RFLAGS={:?} RSP={:#018x} tid={} kstack_top={:#018x}",
             addr,
             code,
             sf.instruction_pointer.as_u64(),
+            sf.code_segment.0,
+            sf.cpu_flags,
             rsp,
             tid,
             ktop,

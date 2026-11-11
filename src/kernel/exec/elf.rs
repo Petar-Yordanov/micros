@@ -178,7 +178,8 @@ pub fn map_user_zero(
     let start = va & !0xfffu64;
     let end = (va + len + 0xfff) & !0xfffu64;
 
-    let mut flags = PageTableFlags::USER_ACCESSIBLE;
+    // Stack and anonymous heap must not be executable.
+    let mut flags = PageTableFlags::USER_ACCESSIBLE | PageTableFlags::NO_EXECUTE;
     if writable {
         flags |= PageTableFlags::WRITABLE;
     }
@@ -272,21 +273,8 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
         }
 
         copy_into_user(aspace, seg_va, &img[file_off..file_end])?;
-        let verify_n = core::cmp::min(seg_filesz as usize, 16);
-        if verify_n > 0 {
-            ksprintln!(
-                "[exec] verify seg vaddr={:#x} file_off={:#x} first {} bytes",
-                seg_va,
-                file_off,
-                verify_n
-            );
-
-            for i in 0..verify_n {
-                ksprintln!("[exec]   src[{}] = {:02x}", i, img[file_off + i]);
-            }
-
-            dump_user_bytes(aspace, seg_va, verify_n);
-        }
+        // Avoid per-byte serial dumps on every application spawn. The ELF
+        // header and PT_LOAD summary below are enough for normal bring-up.
 
         ksprintln!(
             "[exec] PT_LOAD vaddr={:#x} filesz={:#x} memsz={:#x} flags={:#x} map=[{:#x}..{:#x})",
@@ -303,37 +291,16 @@ pub fn load_elf64_user(aspace: &AddressSpace, img: &[u8]) -> Result<u64, ElfErro
 }
 
 fn copy_into_user(aspace: &AddressSpace, dst_va: u64, src: &[u8]) -> Result<(), ElfError> {
+    // Translate once per page, not once PER BYTE. The old implementation did
+    // four page-table walks for each byte of every ELF segment.
     let mut off = 0usize;
     while off < src.len() {
-        let va = dst_va + off as u64;
+        let va = dst_va.checked_add(off as u64).ok_or(ElfError::BadPhdr)?;
         let pa = va_to_pa(aspace, va).ok_or(ElfError::BadPhdr)?;
-        let kptr = (phys_off() + pa).as_mut_ptr::<u8>();
-        unsafe {
-            *kptr = src[off];
-        }
-        off += 1;
+        let len = core::cmp::min(src.len() - off, 4096 - ((va as usize) & 4095));
+        let dst = (phys_off() + pa).as_mut_ptr::<u8>();
+        unsafe { core::ptr::copy_nonoverlapping(src.as_ptr().add(off), dst, len) };
+        off += len;
     }
     Ok(())
-}
-
-fn dump_user_bytes(aspace: &AddressSpace, va: u64, n: usize) {
-    use crate::ksprintln;
-
-    ksprintln!("[exec] dump va={:#x} len={}", va, n);
-
-    let mut i = 0usize;
-    while i < n {
-        let cur_va = va + i as u64;
-        match va_to_pa(aspace, cur_va) {
-            Some(pa) => {
-                let b = unsafe { *((phys_off() + pa).as_ptr::<u8>()) };
-                ksprintln!("[exec]   va={:#x} pa={:#x} byte={:02x}", cur_va, pa, b);
-            }
-            None => {
-                ksprintln!("[exec]   va={:#x} unmapped", cur_va);
-                break;
-            }
-        }
-        i += 1;
-    }
 }

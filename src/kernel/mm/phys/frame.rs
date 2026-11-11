@@ -64,6 +64,17 @@ pub fn free(frame: PhysFrame<Size4KiB>) {
     free_inner(frame);
 }
 
+/// Release a group of physical pages under one bitmap-lock acquisition.
+/// Used when releasing an exited application's entire shared surface.
+pub fn free_many(frames: &[PhysFrame<Size4KiB>]) {
+    let mut p = POOL.lock();
+    for frame in frames {
+        if let Some(idx) = p.idx_of_phys(frame.start_address().as_u64()) {
+            unsafe { p.bm.set_unchecked(idx, false); }
+        }
+    }
+}
+
 fn init_inner() {
     let resp: &MemoryMapResponse = memory_map_response();
     let entries: &[&Entry] = resp.entries();

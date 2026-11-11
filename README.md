@@ -293,3 +293,44 @@ make run FS=ext2
 Distributed under the MIT License. See `LICENSE.md` for details.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+## Multiprocess graphical applications (initial IPC implementation)
+
+GUI apps are built as *individual ELF processes* by `src/user/app_host` and
+placed in `/bin` by `make populate-disk`. The WM no longer links or directly
+calls application implementations. Shared application code and widgets live in
+`src/user/appkit` and `src/user/libui` respectively.
+
+- `wm.elf` registers its inbound channel under the named IPC service
+  `micros.wm`. The application registers an event-channel ID and a
+  shared-memory surface (`REGISTER`).
+- An application paints to its own shared-memory buffer. `PRESENT` messages
+  contain dirty rectangles, not pixels. The WM blends the surface into its
+  existing dirty-rectangle backbuffer. Keyboard and mouse messages travel in
+  the reverse direction.
+- WM starts an app with `SYS_PROC_SPAWN` and a separate address space. The
+  disk contains `hello_app.elf`, `demo_app.elf`, `explorer_app.elf`,
+  `taskmgr_app.elf`, `clock_app.elf`, `notepad_app.elf`, `netinfo_app.elf`,
+  and `browser_app.elf`.
+
+### Rebuild and boot
+
+```sh
+make clean-user clean-kernel clean-iso
+make
+make recreate-disk FS=fat32
+make run FS=fat32
+```
+
+For ext2, run `make recreate-disk FS=ext2` and `make run FS=ext2`.
+
+### Known limitations (do not treat as production IPC)
+
+This is a first-stage multiprocess GUI. Channels are non-blocking, so the
+userspace event loops yield rather than block in the kernel. Queue backpressure,
+process ownership/permissions, event-wait integration, shared-memory release,
+and reclaimed user address spaces require further kernel work. The isolated
+application processes don't share their heap or stack with the WM, but shared
+surface IDs are still globally accessible. Browser and other apps may require
+additional hardware/network-driver tests.

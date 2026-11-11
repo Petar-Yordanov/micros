@@ -24,6 +24,8 @@ pub const SYS_PROC_KILL: u64 = 25;
 pub const SYS_PROC_LIST: u64 = 26;
 pub const SYS_SLEEP_MS: u64 = 27;
 pub const SYS_PROC_INFO: u64 = 28;
+// Map anonymous user-heap pages on demand, rather than loading 16 MiB of BSS.
+pub const SYS_HEAP_COMMIT: u64 = 52;
 
 // RTC
 pub const SYS_TIME_WALL: u64 = 29;
@@ -36,9 +38,13 @@ pub const SYS_LOG: u64 = 100;
 pub const SYS_CHAN_CREATE: u64 = 30;
 pub const SYS_CHAN_SEND: u64 = 31;
 pub const SYS_CHAN_RECV: u64 = 32;
+pub const SYS_CHAN_PUBLISH: u64 = 49;
+pub const SYS_CHAN_FIND: u64 = 50;
+pub const SYS_CHAN_RECV_WAIT: u64 = 51;
 
 pub const SYS_SHM_CREATE: u64 = 40;
 pub const SYS_SHM_MAP: u64 = 41;
+pub const SYS_SHM_UNMAP: u64 = 53;
 
 pub const SYS_EXEC: u64 = 42;
 

@@ -174,6 +174,7 @@ pub fn run_user_elf(path: &str, name: &'static str) -> ! {
             },
             main_task: proc::TaskHandle::new(cur_task),
             state: proc::ProcState::Running,
+            heap_committed: 0,
             name: alloc::string::String::from(name),
         });
     }

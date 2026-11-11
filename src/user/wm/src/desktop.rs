@@ -1,11 +1,11 @@
 use alloc::vec::Vec;
+use alloc::string::String;
+use libui::protocol::{self, GuiMessage};
 
 use libui::event::{CursorKind, MouseButton, UiEvent};
 use libui::geom::{Point, Rect};
 
-use crate::app::{
-    take_launch_request, AppId, AppLaunch, DesktopIcon, StartMenuAction, StartMenuItem,
-};
+use crate::app::{AppId, AppLaunch, DesktopIcon, StartMenuAction, StartMenuItem};
 use crate::apps;
 use crate::window::{Window, WindowHit};
 
@@ -41,6 +41,11 @@ pub struct Desktop {
     pub screen_h: i32,
     pub cursor: Point,
     pub windows: Vec<Window>,
+    pending: Vec<(u64, AppId, Option<String>)>,
+    retired: Vec<u32>,
+    // Surface teardown may require hundreds of page-table updates. Never do
+    // all of them synchronously from a mouse button event handler.
+    pending_unmaps: Vec<(u32, u64)>,
     pub focused: Option<usize>,
     pub cursor_kind: CursorKind,
 
@@ -57,7 +62,7 @@ pub struct Desktop {
     pub desktop_icon_hover: Option<usize>,
     pub desktop_icon_selected: Option<usize>,
 
-    dirty_rect: Option<Rect>,
+    dirty_rects: Vec<Rect>,
     next_window_id: u32,
     dragging: Option<DragState>,
     close_press: Option<ButtonPressState>,
@@ -76,6 +81,9 @@ impl Desktop {
             screen_h,
             cursor: Point::new(screen_w / 2, screen_h / 2),
             windows: Vec::new(),
+            pending: Vec::new(),
+            retired: Vec::new(),
+            pending_unmaps: Vec::new(),
             focused: None,
             cursor_kind: CursorKind::Arrow,
 
@@ -92,7 +100,7 @@ impl Desktop {
             desktop_icon_hover: None,
             desktop_icon_selected: None,
 
-            dirty_rect: Some(Rect::new(0, 0, screen_w, screen_h)),
+            dirty_rects: alloc::vec![Rect::new(0, 0, screen_w, screen_h)],
             next_window_id: 1,
             dragging: None,
             close_press: None,
@@ -106,23 +114,41 @@ impl Desktop {
     }
 
     pub fn mark_dirty(&mut self) {
-        self.dirty_rect = Some(Rect::new(0, 0, self.screen_w, self.screen_h));
+        self.dirty_rects.clear();
+        self.dirty_rects.push(Rect::new(0, 0, self.screen_w, self.screen_h));
     }
 
     pub fn mark_dirty_rect(&mut self, rect: Rect) {
-        let clipped = clip_to_screen(rect, self.screen_w, self.screen_h);
-        if clipped.w <= 0 || clipped.h <= 0 {
+        let mut r = clip_to_screen(rect, self.screen_w, self.screen_h);
+        if r.w <= 0 || r.h <= 0 { return; }
+        // A separate dirty-rect list prevents distant changes (e.g. a window
+        // and a taskbar button) from turning into a near-full-screen redraw.
+        if self.dirty_rects.iter().any(|x| x.w == self.screen_w && x.h == self.screen_h) {
             return;
         }
-
-        self.dirty_rect = Some(match self.dirty_rect {
-            Some(old) => union_rect(old, clipped),
-            None => clipped,
-        });
+        let mut i = 0;
+        while i < self.dirty_rects.len() {
+            let existing = self.dirty_rects[i];
+            let overlaps = r.x < existing.right() && existing.x < r.right()
+                && r.y < existing.bottom() && existing.y < r.bottom();
+            if overlaps {
+                r = union_rect(r, existing);
+                self.dirty_rects.swap_remove(i);
+                i = 0; // new union may overlap another rect
+            } else {
+                i += 1;
+            }
+        }
+        if self.dirty_rects.len() >= 16 {
+            self.mark_dirty(); // bounded damage tracking
+        } else {
+            self.dirty_rects.push(r);
+        }
     }
 
-    pub fn take_dirty_rect(&mut self) -> Option<Rect> {
-        self.dirty_rect.take()
+    pub fn take_dirty_rects(&mut self, into: &mut Vec<Rect>) {
+        into.clear();
+        core::mem::swap(&mut self.dirty_rects, into);
     }
 
     pub fn move_cursor(&mut self, dx: i32, dy: i32) {
@@ -249,8 +275,7 @@ impl Desktop {
             }
 
             if win.contains_client(pos) {
-                let local = Self::client_local_point(win, pos);
-                return win.app.cursor(local);
+                return win.client_cursor;
             }
         }
 
@@ -372,39 +397,182 @@ impl Desktop {
         self.mark_dirty();
     }
 
+    // Launch an independently scheduled ELF from /bin; registration is
+    // asynchronous and supplies the app's dedicated IPC channel & surface.
     fn launch_app(&mut self, launch: AppLaunch) {
-        let win_id = self.next_window_id;
-        self.next_window_id = self.next_window_id.wrapping_add(1);
-
-        let offset = (self.windows.len() as i32 * 24) % 160;
-        let work = self.work_area_rect();
-
-        let (wanted_w, wanted_h) = match &launch {
-            AppLaunch::App(AppId::Demo) => (728, 430),
-            AppLaunch::App(AppId::Hello) => (360, 220),
-            AppLaunch::App(AppId::Explorer) => (600, 380),
-            AppLaunch::App(AppId::TaskManager) => (620, 394),
-            AppLaunch::App(AppId::Clock) => (440, 340),
-            AppLaunch::App(AppId::Notepad) => (640, 420),
-            AppLaunch::App(AppId::NetInfo) => (460, 340),
-            AppLaunch::App(AppId::Browser) => (660, 460),
-            AppLaunch::TextFile(_) => (640, 420),
+        let (app_id,file)=match launch {
+            AppLaunch::App(id)=>(id,None),
+            AppLaunch::TextFile(path)=>(AppId::Notepad,Some(path)),
         };
+        match rlibc::proc::spawn(app_id.filename()) {
+            Ok(pid)=>{
+                self.pending.push((pid as u64,app_id,file));
+            }
+            Err(_)=>{let _=rlibc::log::log("wm: application spawn failed\n");}
+        }
+    }
 
-        let frame_w = wanted_w.min((work.w - 24).max(240));
-        let frame_h = wanted_h.min((work.h - 24).max(180));
+    pub fn register_window(&mut self,msg:&GuiMessage) {
+        let Some(appid)=AppId::from_u32(msg.x as u32) else {return};
+        let Some(pos)=self.pending.iter().position(|(pid,id,_)|*pid==msg.pid && *id==appid) else {return};
+        if msg.channel==0 || msg.surface==0 || msg.w<=0 || msg.h<=0
+            || msg.w>8192 || msg.h>8192 {return}
+        // Bounds check the mapping using the surface dimensions advertised
+        // by the app. Future capability handles should enforce ownership.
+        let Ok(va)=rlibc::shm::map(msg.surface,0,0) else {return};
+        let (_,_,file)=self.pending.remove(pos);
+        let win_id=self.next_window_id;
+        self.next_window_id=self.next_window_id.wrapping_add(1);
+        let offset=(self.windows.len() as i32 * 24) % 160;
+        let work=self.work_area_rect();
+        let wanted_w=msg.w.saturating_add(4);
+        let wanted_h=msg.h.saturating_add(28);
+        let fw=wanted_w.min((work.w-24).max(240));
+        let fh=wanted_h.min((work.h-24).max(180));
+        let frame=Rect::new(
+            (60+offset).clamp(work.x,(work.right()-fw).max(work.x)),
+            (56+offset).clamp(work.y,(work.bottom()-fh).max(work.y)),fw,fh);
+        let win=Window::new(win_id,frame,msg.pid,msg.channel,msg.surface,
+            va as *const u32,msg.w as usize,msg.h as usize,appid.title());
+        if let Some(path)=file {
+            let mut open=GuiMessage::new(protocol::OPEN_FILE);
+            open.put_str(&path);
+            win.send(&open);
+        }
+        // Resize the app's surface if the requested window was clipped.
+        if frame.w != wanted_w || frame.h != wanted_h {win.send_resize();}
+        let old_title = self.focused.and_then(|i| self.windows.get(i)).map(|w| w.titlebar_rect());
+        self.windows.push(win);
+        let _=rlibc::log::log("wm: isolated application registered\n");
+        self.focused=Some(self.windows.len()-1);
+        if let Some(r) = old_title { self.mark_dirty_rect(r); }
+        self.mark_dirty_rect(frame);
+        self.mark_dirty_rect(self.taskbar_rect());
+    }
 
-        let frame = Rect::new(
-            (60 + offset).clamp(work.x, (work.right() - frame_w).max(work.x)),
-            (56 + offset).clamp(work.y, (work.bottom() - frame_h).max(work.y)),
-            frame_w,
-            frame_h,
-        );
+    pub fn handle_ipc(&mut self,msg:&GuiMessage) {
+        match msg.kind {
+            protocol::REGISTER=>self.register_window(msg),
+            protocol::OPEN_FILE=>{
+                if let Some(path)=msg.as_str(){
+                    self.launch_app(AppLaunch::TextFile(String::from(path)));
+                }
+            }
+            protocol::PRESENT|protocol::SURFACE|protocol::CURSOR=>{
+                if let Some(idx)=self.windows.iter().position(|w|w.pid==msg.pid) {
+                    match msg.kind {
+                        protocol::PRESENT=>{
+                            // Client-local dirty area. Only the changed window
+                            // needs redrawing (composition will clip the region).
+                            let c=self.windows[idx].client_rect();
+                            let dirty=Rect::new(c.x.saturating_add(msg.x),c.y.saturating_add(msg.y),msg.w,msg.h);
+                            self.mark_dirty_rect(dirty);
+                        },
+                        protocol::SURFACE=>{
+                            if msg.surface!=0 && msg.w>0 && msg.h>0 && msg.w<=8192 && msg.h<=8192 {
+                                let va=if msg.surface==self.windows[idx].surface_id {
+                                    Some(self.windows[idx].surface_pixels)
+                                } else {
+                                    rlibc::shm::map(msg.surface,0,0).ok().map(|x|x as *const u32)
+                                };
+                                if let Some(va)=va {
+                                    let win=&mut self.windows[idx];
+                                    let old_surface = win.surface_id;
+                                    win.surface_id=msg.surface;
+                                    win.surface_pixels=va;
+                                    win.surface_w=msg.w as usize;
+                                    win.surface_h=msg.h as usize;
+                                    self.mark_dirty_rect(self.windows[idx].client_rect());
+                                    if old_surface != msg.surface {
+                                        self.queue_unmap(self.windows[idx].pid as u32, old_surface);
+                                    }
+                                }
+                            }
+                        },
+                        protocol::CURSOR=>{
+                            self.windows[idx].client_cursor=protocol::decode_cursor(msg.x);
+                            self.update_cursor_kind(self.cursor);
+                        },
+                        _=>{}
+                    }
+                }
+            },
+            _=>{}
+        }
+    }
 
-        self.windows
-            .push(Window::new(win_id, frame, apps::make_launch(launch)));
-        self.focused = Some(self.windows.len() - 1);
-        self.mark_dirty();
+    fn queue_unmap(&mut self, pid: u32, surface_id: u64) {
+        if surface_id != 0 && !self.pending_unmaps.iter().any(|&(_, id)| id == surface_id) {
+            self.pending_unmaps.push((pid, surface_id));
+        }
+    }
+
+    fn retire(&mut self, pid: u32) {
+        if !self.retired.contains(&pid) { self.retired.push(pid); }
+    }
+
+    /// Periodic discovery of applications which died without clicking X.
+    /// The actual unmap/reap work is performed in `service_cleanup`.
+    pub fn reap_exited(&mut self) {
+        let mut i=0;
+        while i<self.windows.len() {
+            let pid=self.windows[i].pid as u32;
+            let dead=rlibc::proc::info(pid).map(|x|x.state==2).unwrap_or(true);
+            if dead {
+                let removed=self.windows.remove(i);
+                self.queue_unmap(pid, removed.surface_id);
+                self.retire(pid);
+                self.refocus_after_visibility_change();
+            } else { i+=1; }
+        }
+        let mut j=0;
+        while j<self.pending.len() {
+            let pid=self.pending[j].0 as u32;
+            if rlibc::proc::info(pid).map(|x|x.state==2).unwrap_or(true) {
+                self.pending.remove(j);
+                self.retire(pid);
+            } else { j+=1; }
+        }
+    }
+
+    /// A single bounded batch per main-loop iteration, AFTER painting.
+    /// The WM must never wait for a child or release thousands of pages in
+    /// one synchronous close handler. The kernel returns EAGAIN until done.
+    pub fn service_cleanup(&mut self) {
+        if let Some(&(_, surface)) = self.pending_unmaps.first() {
+            match rlibc::shm::unmap_step(surface) {
+                Ok(true) => {
+                    self.pending_unmaps.swap_remove(0);
+                }
+                Ok(false) => {}
+                Err(_) => {
+                    // Avoid blocking all other cleanups on a stale handle.
+                    // The owner's eventual reap also discards its mappings.
+                    self.pending_unmaps.swap_remove(0);
+                    let _ = rlibc::log::log("wm: surface unmap failed\n");
+                }
+            }
+            // Round-robin pending surfaces: a large window must not starve
+            // cleanup of smaller windows closed shortly afterwards.
+            if self.pending_unmaps.len() > 1 { self.pending_unmaps.rotate_left(1); }
+            return;
+        }
+
+        // Only one bounded process-reap step per iteration. The kernel's
+        // `SYS_PROC_WAIT` no longer walks the whole address space at once.
+        if let Some(&pid) = self.retired.first() {
+            match rlibc::proc::try_wait(pid, 0) {
+                Ok(_) => { self.retired.swap_remove(0); }
+                Err(rlibc::errno::Errno(n)) if n as i64 == micros_abi::errno::ESRCH => {
+                    self.retired.swap_remove(0);
+                }
+                Err(_) => {
+                    // A child may still be shutting down; keep the WM
+                    // responsive and give the other retired PIDs a turn.
+                    if self.retired.len() > 1 { self.retired.rotate_left(1); }
+                }
+            }
+        }
     }
 
     fn close_window(&mut self, idx: usize) {
@@ -412,7 +580,16 @@ impl Desktop {
             return;
         }
 
-        self.windows.remove(idx);
+        let old_frame = self.windows[idx].frame;
+        let old_title = self.focused.and_then(|i| self.windows.get(i)).map(|w| w.titlebar_rect());
+        let pid = self.windows[idx].pid as u32;
+        if !self.windows[idx].send_close() {
+            // Queue saturation must not leave invisible applications running.
+            let _ = rlibc::proc::kill(pid, 0);
+        }
+        let removed=self.windows.remove(idx);
+        self.queue_unmap(pid, removed.surface_id);
+        self.retire(pid);
         self.close_hover = None;
         self.minimize_hover = None;
         self.maximize_hover = None;
@@ -423,7 +600,13 @@ impl Desktop {
         self.maximize_press = None;
         self.taskbar_close_press = None;
         self.dragging = None;
-        self.refocus_after_visibility_change();
+        self.focused = self.topmost_visible_window_index();
+        self.mark_dirty_rect(old_frame);
+        self.mark_dirty_rect(self.taskbar_rect());
+        if let Some(r) = old_title { self.mark_dirty_rect(r); }
+        if let Some(r) = self.focused.and_then(|i| self.windows.get(i)).map(|w| w.titlebar_rect()) {
+            self.mark_dirty_rect(r);
+        }
     }
 
     fn minimize_window(&mut self, idx: usize) {
@@ -459,6 +642,7 @@ impl Desktop {
             win.minimized = false;
         }
 
+        self.windows[idx].send_resize();
         self.mark_dirty_rect(union_rect(old_frame, self.windows[idx].frame));
     }
 
@@ -682,8 +866,7 @@ impl Desktop {
                         {
                             let local = Self::client_local_point(&self.windows[idx], pos);
                             changed |= self.windows[idx]
-                                .app
-                                .handle_event(&UiEvent::MouseMove { pos: local });
+                                .send_event(&UiEvent::MouseMove { pos: local });
                         }
                     }
 
@@ -764,7 +947,7 @@ impl Desktop {
                         }
                         WindowHit::Client => {
                             let local = Self::client_local_point(&self.windows[idx], pos);
-                            changed |= self.windows[idx].app.handle_event(&UiEvent::MouseDown {
+                            changed |= self.windows[idx].send_event(&UiEvent::MouseDown {
                                 pos: local,
                                 button: MouseButton::Left,
                             });
@@ -897,7 +1080,7 @@ impl Desktop {
                         && self.windows[idx].contains_client(pos)
                     {
                         let local = Self::client_local_point(&self.windows[idx], pos);
-                        changed |= self.windows[idx].app.handle_event(&UiEvent::MouseUp {
+                        changed |= self.windows[idx].send_event(&UiEvent::MouseUp {
                             pos: local,
                             button: MouseButton::Left,
                         });
@@ -915,8 +1098,7 @@ impl Desktop {
                         };
 
                         changed |= self.windows[idx]
-                            .app
-                            .handle_event(&UiEvent::MouseWheel { pos: local, delta });
+                            .send_event(&UiEvent::MouseWheel { pos: local, delta });
                     }
                 }
             }
@@ -928,8 +1110,7 @@ impl Desktop {
                 if let Some(idx) = self.focused {
                     if idx < self.windows.len() && !self.windows[idx].minimized {
                         changed |= self.windows[idx]
-                            .app
-                            .handle_event(&UiEvent::KeyDown { code });
+                            .send_event(&UiEvent::KeyDown { code });
                     }
                 }
             }
@@ -937,15 +1118,10 @@ impl Desktop {
             UiEvent::KeyUp { code } => {
                 if let Some(idx) = self.focused {
                     if idx < self.windows.len() && !self.windows[idx].minimized {
-                        changed |= self.windows[idx].app.handle_event(&UiEvent::KeyUp { code });
+                        changed |= self.windows[idx].send_event(&UiEvent::KeyUp { code });
                     }
                 }
             }
-        }
-
-        while let Some(req) = take_launch_request() {
-            self.launch_app(req);
-            changed = true;
         }
 
         if changed {

@@ -1,8 +1,9 @@
-use alloc::boxed::Box;
 
 use libui::geom::{Point, Rect};
 
-use crate::app::App;
+use libui::event::{UiEvent,CursorKind};
+use libui::protocol::{GuiMessage,self};
+use rlibc::chan;
 
 pub const TITLEBAR_H: i32 = 26;
 pub const FRAME_PAD: i32 = 2;
@@ -28,21 +29,40 @@ pub struct Window {
     pub restore_frame: Option<Rect>,
     pub minimized: bool,
     pub maximized: bool,
-    pub app: Box<dyn App>,
+    pub pid: u64,
+    pub event_chan: u64,
+    pub surface_id: u64,
+    pub surface_pixels: *const u32,
+    pub surface_w: usize,
+    pub surface_h: usize,
+    pub client_cursor: CursorKind,
 }
 
 impl Window {
-    pub fn new(id: u32, frame: Rect, app: Box<dyn App>) -> Self {
-        let title = app.title();
-        Self {
-            id,
-            title,
-            frame,
-            restore_frame: None,
-            minimized: false,
-            maximized: false,
-            app,
-        }
+    pub fn new(id:u32, frame:Rect, pid:u64, channel:u64, surface_id:u64,
+        pixels:*const u32, w:usize, h:usize, title:&'static str)->Self {
+        Self {id,title,frame,restore_frame:None,minimized:false,maximized:false,
+            pid,event_chan:channel,surface_id,surface_pixels:pixels,surface_w:w,surface_h:h,
+            client_cursor:CursorKind::Arrow}
+    }
+    pub fn send(&self, m:&GuiMessage) {
+        // Kernel queue is bounded; never block WM on an application.
+        let _=chan::send(self.event_chan,m.bytes());
+    }
+    pub fn send_event(&self,event:&UiEvent)->bool {
+        let m=GuiMessage::event(event);
+        self.send(&m);
+        false // Damage is driven by asynchronous PRESENT messages.
+    }
+    pub fn send_resize(&self) {
+        let r=self.client_rect();
+        let mut m=GuiMessage::new(protocol::RESIZE);
+        m.w=r.w;m.h=r.h;
+        self.send(&m);
+    }
+    pub fn send_close(&self) -> bool {
+        // Do not silently lose a CLOSE when mouse input filled the channel.
+        chan::send(self.event_chan, GuiMessage::new(protocol::CLOSE).bytes()).is_ok()
     }
 
     pub fn client_rect(&self) -> Rect {

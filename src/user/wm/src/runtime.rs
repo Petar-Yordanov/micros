@@ -4,6 +4,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use rlibc::sched::yield_now;
+use rlibc::chan;
+use libui::protocol::{GuiMessage,WM_SERVICE};
 use rlibc::time::wall_time;
 
 use crate::boot::map_framebuffer;
@@ -14,7 +16,8 @@ use crate::render;
 use libui::event::{MouseButton as UiMouseButton, UiEvent};
 use libui::geom::Rect;
 
-const IDLE_YIELD_EVERY: u32 = 128;
+// Bound idle CPU consumption without visibly delaying input/IPC polling.
+const IDLE_SLEEP_MS: u64 = 4;
 const CLOCK_POLL_IDLE_EVERY: u32 = 64;
 
 pub fn run() -> ! {
@@ -25,10 +28,18 @@ pub fn run() -> ! {
         },
     };
 
+    let wm_inbox=match chan::create(0) {
+        Ok(id)=>id,
+        Err(_)=>rlibc::proc::exit(10),
+    };
+    if chan::publish(WM_SERVICE,wm_inbox).is_err() {rlibc::proc::exit(11);}
+    let _=rlibc::log::log("wm: service micros.wm registered\n");
     let mut desktop = Desktop::new(fb.width, fb.height);
+    let mut ipc_buffer=[0u8;GuiMessage::SIZE];
     let mut parser = InputParser::new();
 
     let mut backbuffer: Vec<u32> = vec![0; fb.width.saturating_mul(fb.height)];
+    let mut dirty_regions: Vec<Rect> = Vec::new();
 
     render::draw(
         &desktop,
@@ -50,11 +61,24 @@ pub fn run() -> ! {
     let mut idle_iters = 0u32;
     let mut last_wall_secs = wall_time().ok().map(|ts| ts.secs);
     let mut last_clock_minute = last_wall_secs.map(|secs| secs / 60);
+    let mut last_composited_window_count = 0usize;
 
     loop {
         let mut did_work = false;
+        // Drain a bounded batch of small control messages without waiting for
+        // applications or copying their framebuffers through the channel.
+        for _ in 0..128 {
+            let n=match chan::recv(wm_inbox,&mut ipc_buffer){Ok(n)=>n,Err(_)=>break};
+            if let Some(msg)=GuiMessage::decode(&ipc_buffer[..n]) {
+                desktop.handle_ipc(&msg);
+                did_work=true;
+            }
+        }
 
-        while let Some(ev) = input::next_parsed_event(&mut parser) {
+        // Do not let a continuous mouse/event stream starve composition.
+        // Unprocessed events remain in the kernel queue for the next frame.
+        for _ in 0..96 {
+            let Some(ev) = input::next_parsed_event(&mut parser) else { break; };
             did_work = true;
 
             match ev {
@@ -104,6 +128,7 @@ pub fn run() -> ! {
             if let Ok(ts) = wall_time() {
                 if last_wall_secs != Some(ts.secs) {
                     last_wall_secs = Some(ts.secs);
+                    desktop.reap_exited();
                 }
 
                 let minute = ts.secs / 60;
@@ -114,36 +139,51 @@ pub fn run() -> ! {
             }
         }
 
-        if let Some(dirty) = desktop.take_dirty_rect() {
-            render::draw(
-                &desktop,
-                backbuffer.as_mut_ptr(),
-                fb.width,
-                fb.width,
-                fb.height,
-                Some(dirty),
-            );
-            present_rect(
-                fb.ptr,
-                fb.pitch_pixels,
-                fb.width,
-                fb.height,
-                &backbuffer,
-                dirty,
-            );
+        desktop.take_dirty_rects(&mut dirty_regions);
+        if !dirty_regions.is_empty() {
+            let first_window_frame = desktop.windows.len() > last_composited_window_count;
+            if first_window_frame {
+                let _ = rlibc::log::log("wm: composing first application frame\n");
+            }
+            for dirty in dirty_regions.iter().copied() {
+                render::draw(
+                    &desktop,
+                    backbuffer.as_mut_ptr(),
+                    fb.width,
+                    fb.width,
+                    fb.height,
+                    Some(dirty),
+                );
+                present_rect(
+                    fb.ptr,
+                    fb.pitch_pixels,
+                    fb.width,
+                    fb.height,
+                    &backbuffer,
+                    dirty,
+                );
+            }
+            if first_window_frame {
+                let _ = rlibc::log::log("wm: first application frame presented\n");
+            }
+            last_composited_window_count = desktop.windows.len();
         }
+
+        // Cleanup must follow drawing, not block a close-button handler.
+        // Both SHM unmap and process VM teardown are bounded to one batch
+        // per compositor iteration.
+        desktop.service_cleanup();
 
         if did_work {
             idle_iters = 0;
         } else {
             idle_iters = idle_iters.wrapping_add(1);
 
-            if (idle_iters % IDLE_YIELD_EVERY) == 0 {
+            // SYS_YIELD only requests a deferred switch; an unconditional
+            // tight yield loop saturates the syscall path. Sleep for a small
+            // number of timer ticks when there is no work instead.
+            if rlibc::sched::sleep_ms(IDLE_SLEEP_MS).is_err() {
                 let _ = yield_now();
-            } else {
-                for _ in 0..256 {
-                    core::hint::spin_loop();
-                }
             }
         }
     }

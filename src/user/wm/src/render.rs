@@ -383,7 +383,8 @@ fn draw_windows(canvas: &mut Canvas, desktop: &Desktop) {
 
         let client = win.client_rect();
         canvas.fill_rect(client, WINDOW_BG);
-        win.app.render(canvas, client, focused);
+        canvas.blit_opaque(client,win.surface_pixels,win.surface_w,
+            win.surface_w,win.surface_h);
     }
 }
 

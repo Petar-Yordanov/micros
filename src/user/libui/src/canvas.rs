@@ -47,6 +47,26 @@ impl Canvas {
         intersect_rect(self.clip, rect).is_some()
     }
 
+    /// Copy opaque app pixels into the compositor backbuffer. Both client
+    /// bounds and the WM's damage rectangle are applied before copying.
+    pub fn blit_opaque(&mut self, target: Rect, src: *const u32, src_pitch: usize,
+                       src_width: usize, src_height: usize) {
+        if src.is_null() || src_pitch < src_width || target.w<=0 || target.h<=0 {return;}
+        let visible=Rect::new(target.x,target.y,
+            target.w.min(src_width as i32),target.h.min(src_height as i32));
+        let Some(r)=intersect_rect(self.clip,visible) else {return};
+        let Some(r)=intersect_rect(r,Rect::new(0,0,self.width as i32,self.height as i32)) else {return};
+        for y in r.y..r.bottom() {
+            let sy=(y-target.y) as usize;
+            let sx=(r.x-target.x) as usize;
+            let dy=y as usize;
+            let dx=r.x as usize;
+            let count=r.w as usize;
+            unsafe {core::ptr::copy_nonoverlapping(src.add(sy*src_pitch+sx),
+                self.fb.add(dy*self.pitch_pixels+dx),count)};
+        }
+    }
+
     #[inline]
     pub fn clear(&mut self, color: u32) {
         self.fill_rect(

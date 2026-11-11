@@ -215,13 +215,6 @@ impl Ext2 {
             return Err(Ext2Err::BadSuperblock);
         }
 
-        ksprintln!(
-            "[ext2][io] read_block block={} off={:#x} len={}",
-            block,
-            (block as u64) * (self.block_size as u64),
-            out.len()
-        );
-
         self.read_exact((block as u64) * (self.block_size as u64), out)
     }
 
@@ -461,84 +454,83 @@ impl Ext2 {
 
     fn read_inode_data(&self, ino: u32, max_bytes: usize) -> Result<Vec<u8>, Ext2Err> {
         let (mode, size, blkptrs) = self.inode_mode_size_blocks(ino)?;
-        ksprintln!(
-            "[ext2][read_inode_data] ino={} mode={:#x} size={} max_bytes={}",
-            ino,
-            mode,
-            size,
-            max_bytes
-        );
-
         if !(is_reg(mode) || is_dir(mode)) {
             ksprintln!("[ext2][read_inode_data] ino={} unsupported mode", ino);
             return Err(Ext2Err::Unsupported);
         }
 
         let want = min(size as usize, max_bytes);
-        ksprintln!("[ext2][read_inode_data] ino={} want={}", ino, want);
-
         if want == 0 {
-            ksprintln!("[ext2][read_inode_data] ino={} empty", ino);
             return Ok(Vec::new());
         }
-
         let bs = self.block_size as usize;
+        let per_block = (self.block_size / 4) as u32;
         let blocks_needed = (want + bs - 1) / bs;
-        ksprintln!(
-            "[ext2][read_inode_data] ino={} bs={} blocks_needed={}",
-            ino,
-            bs,
-            blocks_needed
-        );
-
         let mut out = Vec::with_capacity(want);
+        let mut block_buf = vec![0u8; bs];
 
-        for file_blk in 0..(blocks_needed as u32) {
-            let disk_blk = self.inode_data_block_no(&blkptrs, file_blk)?;
-            ksprintln!(
-                "[ext2][read_inode_data] ino={} file_blk={} -> disk_blk={}",
-                ino,
-                file_blk,
-                disk_blk
-            );
+        // Loading a ~5 MiB ELF used to re-read single/double indirect tables
+        // for *every* 4 KiB data block (thousands of additional virtio I/Os).
+        // Cache the tables for the duration of this file read. Keep the existing
+        // inode_data_block_no helper for other filesystem operations.
+        let mut single_indirect: Option<Vec<u8>> = None;
+        let mut double_root: Option<Vec<u8>> = None;
+        let mut double_leaf: Option<Vec<u8>> = None;
+        let mut double_leaf_number = 0u32;
 
-            let mut buf = vec![0u8; bs];
-            if disk_blk != 0 {
-                self.read_block(disk_blk, &mut buf)?;
+        for file_blk in 0..blocks_needed {
+            let idx = file_blk as u32;
+            let disk_blk = if idx < 12 {
+                blkptrs[idx as usize]
+            } else if idx - 12 < per_block {
+                if blkptrs[12] == 0 { 0 } else {
+                    if single_indirect.is_none() {
+                        let mut table = vec![0u8; bs];
+                        self.read_block(blkptrs[12], &mut table)?;
+                        single_indirect = Some(table);
+                    }
+                    rd32(single_indirect.as_ref().unwrap(), ((idx - 12) as usize) * 4)
+                }
             } else {
-                buf.fill(0);
-            }
+                let double_idx = idx - 12 - per_block;
+                let double_limit = per_block.checked_mul(per_block).ok_or(Ext2Err::Unsupported)?;
+                if double_idx >= double_limit {
+                    // Triple-indirect pointers are not supported here.
+                    return Err(Ext2Err::Unsupported);
+                }
+                if blkptrs[13] == 0 { 0 } else {
+                    if double_root.is_none() {
+                        let mut table = vec![0u8; bs];
+                        self.read_block(blkptrs[13], &mut table)?;
+                        double_root = Some(table);
+                    }
+                    let outer = double_idx / per_block;
+                    let inner = double_idx % per_block;
+                    let leaf = rd32(double_root.as_ref().unwrap(), outer as usize * 4);
+                    if leaf == 0 { 0 } else {
+                        if double_leaf.is_none() || double_leaf_number != leaf {
+                            let mut table = vec![0u8; bs];
+                            self.read_block(leaf, &mut table)?;
+                            double_leaf = Some(table);
+                            double_leaf_number = leaf;
+                        }
+                        rd32(double_leaf.as_ref().unwrap(), inner as usize * 4)
+                    }
+                }
+            };
 
+            if disk_blk != 0 {
+                self.read_block(disk_blk, &mut block_buf)?;
+            } else {
+                // Sparse ext2 blocks read back as zeros, never stale data from
+                // the previous iteration's shared buffer.
+                block_buf.fill(0);
+            }
             let take = min(bs, want - out.len());
-            ksprintln!(
-                "[ext2][read_inode_data] ino={} file_blk={} take={} out_before={}",
-                ino,
-                file_blk,
-                take,
-                out.len()
-            );
-
-            out.extend_from_slice(&buf[..take]);
-
-            ksprintln!(
-                "[ext2][read_inode_data] ino={} file_blk={} out_after={}",
-                ino,
-                file_blk,
-                out.len()
-            );
-
-            if out.len() >= want {
-                break;
-            }
+            out.extend_from_slice(&block_buf[..take]);
         }
 
-        out.truncate(want);
-        ksprintln!(
-            "[ext2][read_inode_data] ino={} done final_len={}",
-            ino,
-            out.len()
-        );
-
+        ksprintln!("[ext2][read_inode_data] ino={} read {} bytes in {} blocks", ino, out.len(), blocks_needed);
         Ok(out)
     }
 

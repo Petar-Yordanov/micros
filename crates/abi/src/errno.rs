@@ -3,6 +3,7 @@ pub const ENOENT: i64 = 2;
 pub const ESRCH: i64 = 3;
 pub const EIO: i64 = 5;
 pub const EAGAIN: i64 = 11;
+pub const EEXIST: i64 = 17;
 pub const ENOMEM: i64 = 12;
 pub const EFAULT: i64 = 14;
 pub const ENODEV: i64 = 19;
