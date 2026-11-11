@@ -51,6 +51,15 @@ fn fat32_vfs_selftest() -> Result<(), VfsError> {
         Err(e) => ksprintln!("[vfs][WARN] case-insensitive lookup failed: {:?}", e),
     }
 
+    // The small-file checks above cannot catch bugs that appear only while
+    // walking the many clusters of a userspace executable.
+    let init = vfs_read("/bin/init.elf")?;
+    if init.len() < 64 || !init.starts_with(b"\x7fELF") {
+        ksprintln!("[vfs][FAIL] FAT32 /bin/init.elf invalid ELF ({} bytes)", init.len());
+        return Err(VfsError::FsSpecific);
+    }
+    ksprintln!("[vfs] FAT32 /bin/init.elf read OK ({} bytes)", init.len());
+
     Ok(())
 }
 

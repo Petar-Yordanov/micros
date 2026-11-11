@@ -25,8 +25,10 @@ pub const USER_STACK_TOP: u64 = 0x0000_7fff_ffff_f000;
 pub const USER_STACK_PAGES: usize = 16; // 64 KiB stack
 
 pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUserElf, ExecError> {
-    let img: Vec<u8> =
-        crate::kernel::fs::vfs::ops::vfs_read(path).map_err(|_| ExecError::VfsReadFail)?;
+    let img: Vec<u8> = crate::kernel::fs::vfs::ops::vfs_read(path).map_err(|e| {
+        ksprintln!("[exec] VFS read failed for {}: {:?}", path, e);
+        ExecError::VfsReadFail
+    })?;
     ksprintln!("[exec] read {} bytes from {}", img.len(), path);
 
     if img.len() >= 16 {
@@ -39,9 +41,12 @@ pub fn load_user_elf_into(aspace: &AddressSpace, path: &str) -> Result<LoadedUse
         );
     }
 
-    let entry = crate::kernel::exec::elf::load_elf64_user(aspace, &img).map_err(|e| match e {
-        crate::kernel::exec::elf::ElfError::NoMem => ExecError::NoMemory,
-        _ => ExecError::BadElf,
+    let entry = crate::kernel::exec::elf::load_elf64_user(aspace, &img).map_err(|e| {
+        ksprintln!("[exec] ELF loader failed for {}: {:?}", path, e);
+        match e {
+            crate::kernel::exec::elf::ElfError::NoMem => ExecError::NoMemory,
+            _ => ExecError::BadElf,
+        }
     })?;
 
     let stack_top = USER_STACK_TOP;

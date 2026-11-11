@@ -154,12 +154,23 @@ populate-disk: check-vars check-fs $(DISK) build-user
 	    tmp=$$(mktemp); \
 	    printf "MicrOS says hi!\n" > $$tmp; \
 	    mmd   -D o -i $(DISK) ::/testdir >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $$tmp               ::/hello.txt       >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $$tmp               ::/hello.txt       >/dev/null; \
 	    mmd   -D o -i $(DISK) ::/bin                 >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $(USER_INIT_BIN)    ::/bin/init.elf    >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $(USER_WM_BIN)      ::/bin/wm.elf      >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $(USER_IPC_SRV_BIN) ::/bin/ipc_srv.elf >/dev/null 2>&1 || true; \
-	    mcopy -D o -o -i $(DISK) $(USER_IPC_CLI_BIN) ::/bin/ipc_cli.elf >/dev/null 2>&1 || true; \
+	    mcopy -D o -o -i $(DISK) $(USER_INIT_BIN)    ::/bin/init.elf    >/dev/null; \
+	    mcopy -D o -o -i $(DISK) $(USER_WM_BIN)      ::/bin/wm.elf      >/dev/null; \
+	    mcopy -D o -o -i $(DISK) $(USER_IPC_SRV_BIN) ::/bin/ipc_srv.elf >/dev/null; \
+	    mcopy -D o -o -i $(DISK) $(USER_IPC_CLI_BIN) ::/bin/ipc_cli.elf >/dev/null; \
+	    for elf in init wm ipc_srv ipc_cli; do \
+	      src="$(USER_TARGET_DIR)/x86_64-unknown-none/debug/$$elf"; \
+	      dst="::/bin/$$elf.elf"; \
+	      verify=$$(mktemp); \
+	      if ! mcopy -o -i $(DISK) "$$dst" "$$verify" >/dev/null || ! cmp -s "$$src" "$$verify"; then \
+	        rm -f "$$verify" "$$tmp"; \
+	        echo "[mk][ERR] FAT32 ELF missing or corrupt: $$dst" >&2; \
+	        exit 1; \
+	      fi; \
+	      rm -f "$$verify"; \
+	    done; \
 	    rm -f $$tmp; \
 	    sync; \
 	    echo "[mk] populate done"; \

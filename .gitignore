@@ -24,3 +24,7 @@ target-nightly
 *.iso
 *.log
 *.img
+
+# Captures and archives
+*.pcap
+*.zip

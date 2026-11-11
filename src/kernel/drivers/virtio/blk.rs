@@ -70,7 +70,7 @@ impl VirtioBlk {
             let status_pa = page::translate(status_va).unwrap();
             core::ptr::write(status_va.as_mut_ptr::<u8>(), 0x5a);
 
-            let (dma_va_base, dma_pa_base, _dma_pages, dma_off, dma_needs_copy) =
+            let (dma_va_base, dma_pa_base, dma_pages, dma_off, dma_needs_copy) =
                 Self::dma_prepare_buffer(data, len);
 
             if dma_needs_copy && !is_read {
@@ -118,6 +118,25 @@ impl VirtioBlk {
             loop {
                 if let Some(u) = self.vq0.pop_used() {
                     let st = core::ptr::read(status_va.as_ptr::<u8>());
+
+                    // A bounce buffer must be copied back after a successful device read.
+                    // Without this, non-contiguous caller buffers receive stale bytes,
+                    // which can silently corrupt FAT entries and large ELF reads.
+                    if st == 0 && is_read && dma_needs_copy {
+                        core::ptr::copy_nonoverlapping(
+                            (dma_va_base.as_u64() + dma_off) as *const u8,
+                            data,
+                            len,
+                        );
+                    }
+
+                    // Each request owns its header/status pages and (if used) bounce
+                    // pages. Free all of them only AFTER the device has completed.
+                    if dma_needs_copy {
+                        vmarena::free_n(dma_va_base, dma_pages);
+                    }
+                    vmarena::free(status_va);
+                    vmarena::free(hdr_va);
 
                     if st != 0 {
                         ksprintln!(

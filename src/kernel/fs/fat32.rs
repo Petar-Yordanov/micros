@@ -445,14 +445,29 @@ impl Fat32 {
         Ok(())
     }
 
-    fn read_cluster_chain(&self, start_clus: u32, mut max_bytes: usize) -> Result<Vec<u8>, FatErr> {
+    fn read_cluster_chain(
+        &self,
+        start_clus: u32,
+        mut max_bytes: usize,
+        require_complete: bool,
+    ) -> Result<Vec<u8>, FatErr> {
         if start_clus < 2 || max_bytes == 0 {
             return Ok(Vec::new());
         }
         let mut out = Vec::with_capacity(max_bytes);
         let mut cur = start_clus;
+        let mut clusters_read = 0u32;
 
         loop {
+            // Reject out-of-range or reserved FAT entries before using them as
+            // data-cluster addresses. A broken chain must never be a short read.
+            if cur < 2 || cur >= self.data_clusters + 2 || cur >= 0x0FFF_FFF0 {
+                return Err(FatErr::Io);
+            }
+            clusters_read += 1;
+            if clusters_read > self.data_clusters {
+                return Err(FatErr::Io); // cyclic/corrupt chain
+            }
             let first_sec = self.clus_to_first_sector(cur);
             for s in 0..(self.spc as u32) {
                 let mut secbuf = [0u8; SEC];
@@ -471,8 +486,16 @@ impl Fat32 {
             }
 
             let nxt = self.fat_entry_read(cur)?;
-            if Self::is_eoc(nxt) || nxt < 2 {
-                break;
+            if Self::is_eoc(nxt) {
+                // Files that advertise more bytes than their FAT chain holds
+                // are corrupt; don't hand a truncated ELF to the loader.
+                if require_complete {
+                    return Err(FatErr::Io);
+                }
+                break; // end of directory chain before the read cap
+            }
+            if nxt < 2 || nxt == 0x0FFF_FFF7 {
+                return Err(FatErr::Io);
             }
             cur = nxt;
         }
@@ -607,7 +630,7 @@ impl Fat32 {
 
     fn dir_list_from_with_names(&self, start_clus: u32) -> Result<Vec<(String, DirEnt)>, FatErr> {
         let bytes = 256 * 1024;
-        let raw = self.read_cluster_chain(start_clus, bytes)?;
+        let raw = self.read_cluster_chain(start_clus, bytes, false)?;
 
         let mut out: Vec<(String, DirEnt)> = Vec::new();
 
@@ -1007,8 +1030,16 @@ impl Fat32 {
                 if start < 2 && size > 0 {
                     return Err(FatErr::BadBpb);
                 }
-                let mut data = self.read_cluster_chain(start, size)?;
-                data.truncate(size);
+                let data = self.read_cluster_chain(start, size, true)?;
+                if data.len() != size {
+                    ksprintln!(
+                        "[fat32][read] {}: incomplete chain (expected {} bytes, got {})",
+                        path,
+                        size,
+                        data.len()
+                    );
+                    return Err(FatErr::Io);
+                }
                 return Ok(data);
             }
         }
